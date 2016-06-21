@@ -1,1 +1,4 @@
 *.pyc
+log/
+checkpoint/
+roms/
