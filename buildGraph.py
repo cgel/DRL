@@ -12,7 +12,7 @@ def conv2d(x, W, stride, name):
     return tf.nn.conv2d(x, W, strides = [1, stride, stride, 1], padding = "VALID", name=name)
 
 def xavier_std(in_size, out_size):
-    return np.sqrt(2/(in_size + out_size))
+    return np.sqrt(2./(in_size + out_size))
 
 def createQNetwork(summaryCollection, action_num):
     conv_layer_counter = [0]
@@ -25,7 +25,7 @@ def createQNetwork(summaryCollection, action_num):
         layer_name = "conv"+str(conv_layer_counter[0])
         nn_head_channels = nn_head.get_shape().as_list()[3]
         w_size = [kernel_size, kernel_size, nn_head_channels, channels]
-        w = tf.Variable(tf.truncated_normal(w_size, stddev = xavier_std(nn_head_channels, channels), name=layer_name+"_W"))
+        w = tf.Variable(tf.truncated_normal(w_size, stddev = xavier_std(nn_head_channels, channels), name=layer_name+"_W_init"), name=layer_name+"_W")
         weight_list.append(w)
         new_head = tf.nn.relu(conv2d(nn_head, w, stride, name=layer_name), name=layer_name+"_relu")
         tf.add_to_collection(summaryCollection, tf.histogram_summary(layer_name+"_relu", new_head))
@@ -36,7 +36,7 @@ def createQNetwork(summaryCollection, action_num):
         linear_layer_counter[0] +=1
         layer_name = "linear"+str(linear_layer_counter[0])
         nn_head_size = nn_head.get_shape().as_list()[1]
-        w = tf.Variable(tf.truncated_normal([nn_head_size, size], stddev = xavier_std(nn_head_size, size), name=layer_name+"_W"))
+        w = tf.Variable(tf.truncated_normal([nn_head_size, size], stddev = xavier_std(nn_head_size, size), name=layer_name+"_W_init"), name=layer_name+"_W")
         weight_list.append(w)
         new_head = tf.nn.relu(tf.matmul(nn_head, w, name=layer_name), name=layer_name+"_relu")
         tf.add_to_collection(summaryCollection, tf.histogram_summary(layer_name+"_relu", new_head))
@@ -44,7 +44,6 @@ def createQNetwork(summaryCollection, action_num):
 
     input_state_placeholder = tf.placeholder("float",[None,84,84,4], name=summaryCollection+"/state_placeholder")
     normalized = input_state_placeholder / 256.
-
 
     nn_head = add_conv_layer(normalized, channels=32, kernel_size=8, stride=4)
     nn_head = add_conv_layer(nn_head, channels=64, kernel_size=4, stride=2)
