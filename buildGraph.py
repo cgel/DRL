@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 def build_activation_summary(x, summaryCollection):
     tensor_name = x.op.name
@@ -7,69 +8,58 @@ def build_activation_summary(x, summaryCollection):
     tf.add_to_collection(summaryCollection, hs)
     tf.add_to_collection(summaryCollection, ss)
 
-def weight_variable(shape):
-    initial = tf.truncated_normal(shape, stddev = 0.06)
-    return tf.Variable(initial)
+def conv2d(x, W, stride, name):
+    return tf.nn.conv2d(x, W, strides = [1, stride, stride, 1], padding = "VALID", name=name)
 
-def bias_variable(shape):
-    initial = tf.constant(0.06, shape = shape)
-    return tf.Variable(initial)
-
-def conv2d(x, W, stride):
-    return tf.nn.conv2d(x, W, strides = [1, stride, stride, 1], padding = "VALID")
+def xavier_std(in_size, out_size):
+    return np.sqrt(2/(in_size + out_size))
 
 def createQNetwork(summaryCollection, action_num):
-    # network weights
-    # weights should be initialized intelligently
-    W_conv1 = weight_variable([8,8,4,32])
-    b_conv1 = bias_variable([32])
+    conv_layer_counter = [0]
+    linear_layer_counter = [0]
+    weight_list = []
 
-    W_conv2 = weight_variable([4,4,32,64])
-    b_conv2 = bias_variable([64])
+    def add_conv_layer(nn_head, channels, kernel_size, stride):
+        assert len(nn_head.get_shape()) == 4, "can't add a conv layer to this input"
+        conv_layer_counter[0] += 1
+        layer_name = "conv"+str(conv_layer_counter[0])
+        nn_head_channels = nn_head.get_shape().as_list()[3]
+        w_size = [kernel_size, kernel_size, nn_head_channels, channels]
+        w = tf.Variable(tf.truncated_normal(w_size, stddev = xavier_std(nn_head_channels, channels), name=layer_name+"_W"))
+        weight_list.append(w)
+        new_head = tf.nn.relu(conv2d(nn_head, w, stride, name=layer_name), name=layer_name+"_relu")
+        tf.add_to_collection(summaryCollection, tf.histogram_summary(layer_name+"_relu", new_head))
+        return new_head
 
-    W_conv3 = weight_variable([3,3,64,64])
-    b_conv3 = bias_variable([64])
-
-    W_fc1 = weight_variable([3136,512])
-    b_fc1 = bias_variable([512])
-
-    W_fc2 = weight_variable([512,action_num])
-    b_fc2 = bias_variable([action_num])
-
-    # input layer
+    def add_linear_layer(nn_head, size):
+        assert len(nn_head.get_shape()) == 2, "can't add a linear layer to this input"
+        linear_layer_counter[0] +=1
+        layer_name = "linear"+str(linear_layer_counter[0])
+        nn_head_size = nn_head.get_shape().as_list()[1]
+        w = tf.Variable(tf.truncated_normal([nn_head_size, size], stddev = xavier_std(nn_head_size, size), name=layer_name+"_W"))
+        weight_list.append(w)
+        new_head = tf.nn.relu(tf.matmul(nn_head, w, name=layer_name), name=layer_name+"_relu")
+        tf.add_to_collection(summaryCollection, tf.histogram_summary(layer_name+"_relu", new_head))
+        return new_head
 
     input_state_placeholder = tf.placeholder("float",[None,84,84,4], name=summaryCollection+"/state_placeholder")
-
     normalized = input_state_placeholder / 256.
-    # hidden layers
-    h_conv1 = tf.nn.relu(conv2d(normalized,W_conv1,4) + b_conv1)
-    tf.add_to_collection(summaryCollection, tf.histogram_summary("conv1_h", h_conv1))
-    #h_pool1 = self.max_pool_2x2(h_conv1)
 
-    h_conv2 = tf.nn.relu(conv2d(h_conv1,W_conv2,2) + b_conv2)
-    tf.add_to_collection(summaryCollection, tf.histogram_summary("conv2_h", h_conv2))
 
-    h_conv3 = tf.nn.relu(conv2d(h_conv2,W_conv3,1) + b_conv3)
-    tf.add_to_collection(summaryCollection, tf.histogram_summary("conv3_h", h_conv3))
+    nn_head = add_conv_layer(normalized, channels=32, kernel_size=8, stride=4)
+    nn_head = add_conv_layer(nn_head, channels=64, kernel_size=4, stride=2)
+    nn_head = add_conv_layer(nn_head, channels=64, kernel_size=3, stride=1)
 
-    with tf.name_scope("flatten"):
-        h_conv3_shape = h_conv3.get_shape().as_list()
-        h_conv3_flat = tf.reshape(h_conv3,[-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
+    h_conv3_shape = nn_head.get_shape().as_list()
+    nn_head = tf.reshape(nn_head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
 
-    h_fc1 = tf.nn.relu(tf.matmul(h_conv3_flat,W_fc1) + b_fc1)
-    tf.add_to_collection(summaryCollection, tf.histogram_summary("fc1_h", h_fc1))
+    nn_head = add_linear_layer(nn_head, size=512)
+    Q = add_linear_layer(nn_head, size=action_num)
 
-    # Q Value layer
-    with tf.name_scope("Qs"):
-        Q = tf.matmul(h_fc1,W_fc2) + b_fc2
-        build_activation_summary(Q, summaryCollection)
+    for weight in weight_list:
+        build_activation_summary(weight, summaryCollection)
 
-    paramList = [W_conv1,b_conv1,W_conv2,b_conv2,W_conv3,b_conv3,W_fc1,b_fc1,W_fc2,b_fc2]
-    for param in paramList:
-        build_activation_summary(param, summaryCollection)
-
-    return input_state_placeholder, Q, paramList
-
+    return input_state_placeholder, Q, weight_list
 
 def build_train_op(DQN, Y, action, action_num):
     with tf.name_scope("loss"):
