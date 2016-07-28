@@ -8,11 +8,11 @@ def build_activation_summary(x, summaryCollection):
     tf.add_to_collection(summaryCollection, ss)
 
 def weight_variable(shape):
-    initial = tf.truncated_normal(shape, stddev = 0.01)
+    initial = tf.truncated_normal(shape, stddev = 0.06)
     return tf.Variable(initial)
 
 def bias_variable(shape):
-    initial = tf.constant(0.01, shape = shape)
+    initial = tf.constant(0.06, shape = shape)
     return tf.Variable(initial)
 
 def conv2d(x, W, stride):
@@ -20,6 +20,7 @@ def conv2d(x, W, stride):
 
 def createQNetwork(summaryCollection, action_num):
     # network weights
+    # weights should be initialized intelligently
     W_conv1 = weight_variable([8,8,4,32])
     b_conv1 = bias_variable([32])
 
@@ -39,29 +40,28 @@ def createQNetwork(summaryCollection, action_num):
 
     input_state_placeholder = tf.placeholder("float",[None,84,84,4], name=summaryCollection+"/state_placeholder")
 
-    with tf.name_scope("conv1"):
-        h_conv1 = tf.nn.relu(conv2d(input_state_placeholder,W_conv1,4) + b_conv1, name="conv1")
-        build_activation_summary(h_conv1, summaryCollection)
-        #h_pool1 = self.max_pool_2x2(h_conv1)
+    normalized = input_state_placeholder / 256.
+    # hidden layers
+    h_conv1 = tf.nn.relu(conv2d(normalized,W_conv1,4) + b_conv1)
+    tf.add_to_collection(summaryCollection, tf.histogram_summary("conv1_h", h_conv1))
+    #h_pool1 = self.max_pool_2x2(h_conv1)
 
-    with tf.name_scope("conv2"):
-        h_conv2 = tf.nn.relu(conv2d(h_conv1,W_conv2,2) + b_conv2, name="conv2")
-        build_activation_summary(h_conv2, summaryCollection)
+    h_conv2 = tf.nn.relu(conv2d(h_conv1,W_conv2,2) + b_conv2)
+    tf.add_to_collection(summaryCollection, tf.histogram_summary("conv2_h", h_conv2))
 
-    with tf.name_scope("conv3"):
-        h_conv3 = tf.nn.relu(conv2d(h_conv2,W_conv3,1) + b_conv3, name="conv3")
-        build_activation_summary(h_conv3, summaryCollection)
+    h_conv3 = tf.nn.relu(conv2d(h_conv2,W_conv3,1) + b_conv3)
+    tf.add_to_collection(summaryCollection, tf.histogram_summary("conv3_h", h_conv3))
 
     with tf.name_scope("flatten"):
         h_conv3_shape = h_conv3.get_shape().as_list()
         h_conv3_flat = tf.reshape(h_conv3,[-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
 
-    with tf.name_scope("linear1"):
-        h_fc1 = tf.nn.relu(tf.matmul(h_conv3_flat,W_fc1) + b_fc1, name="linear1")
-        build_activation_summary(h_fc1, summaryCollection)
+    h_fc1 = tf.nn.relu(tf.matmul(h_conv3_flat,W_fc1) + b_fc1)
+    tf.add_to_collection(summaryCollection, tf.histogram_summary("fc1_h", h_fc1))
 
+    # Q Value layer
     with tf.name_scope("Qs"):
-        Q = tf.add(tf.matmul(h_fc1,W_fc2), b_fc2, name="Qs")
+        Q = tf.matmul(h_fc1,W_fc2) + b_fc2
         build_activation_summary(Q, summaryCollection)
 
     paramList = [W_conv1,b_conv1,W_conv2,b_conv2,W_conv3,b_conv3,W_fc1,b_fc1,W_fc2,b_fc2]
@@ -90,4 +90,14 @@ def build_train_op(DQN, Y, action, action_num):
         tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_Y_0", Y[0]))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_actedDQN_0", DQN_acted[0]))
         #tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_maxDQN_0", tf.reduce_max(DQN[0])))
-    return tf.train.RMSPropOptimizer(0.00025,0.95,0.95,0.01).minimize(loss)
+
+    opti = tf.train.RMSPropOptimizer(0.00025,0.95,0.95,0.01)
+    grads = opti.compute_gradients(loss)
+
+    train_op = opti.apply_gradients(grads) # have to pass global_step ?????
+
+    for grad, var in grads:
+        if grad is not None:
+            tf.add_to_collection("DQN_summaries", tf.histogram_summary(var.op.name + '/gradients', grad))
+
+    return train_op
