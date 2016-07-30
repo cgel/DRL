@@ -31,7 +31,7 @@ def createQNetwork(summaryCollection, action_num):
         weight_list.append(w)
 
         new_head = tf.nn.relu(conv2d(nn_head, w, stride, name=layer_name), name=layer_name+"_relu")
-        tf.add_to_collection(summaryCollection, tf.histogram_summary(layer_name+"_relu", new_head))
+        build_activation_summary(new_head, summaryCollection)
         return new_head
 
     def add_linear_layer(nn_head, size):
