@@ -25,9 +25,15 @@ def createQNetwork(summaryCollection, action_num):
         layer_name = "conv"+str(conv_layer_counter[0])
         nn_head_channels = nn_head.get_shape().as_list()[3]
         w_size = [kernel_size, kernel_size, nn_head_channels, channels]
+
         w = tf.Variable(tf.truncated_normal(w_size, stddev = xavier_std(nn_head_channels, channels), name=layer_name+"_W_init"), name=layer_name+"_W")
+        w_bias = tf.Variable(tf.truncated_normal([channels], stddev = 0, name=layer_name+"_W_bias_init"), name=layer_name+"_W_bias")
+        tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
+        tf.add_to_collection(summaryCollection, tf.histogram_summary(w_bias.op.name, w_bias))
         weight_list.append(w)
-        new_head = tf.nn.relu(conv2d(nn_head, w, stride, name=layer_name), name=layer_name+"_relu")
+        weight_list.append(w_bias)
+
+        new_head = tf.nn.relu(conv2d(nn_head, w, stride, name=layer_name) + w_bias, name=layer_name+"_relu")
         tf.add_to_collection(summaryCollection, tf.histogram_summary(layer_name+"_relu", new_head))
         return new_head
 
@@ -36,14 +42,21 @@ def createQNetwork(summaryCollection, action_num):
         linear_layer_counter[0] +=1
         layer_name = "linear"+str(linear_layer_counter[0])
         nn_head_size = nn_head.get_shape().as_list()[1]
+
         w = tf.Variable(tf.truncated_normal([nn_head_size, size], stddev = xavier_std(nn_head_size, size), name=layer_name+"_W_init"), name=layer_name+"_W")
+        w_bias = tf.Variable(tf.truncated_normal([size], stddev = 0, name=layer_name+"_W_bias_init"), name=layer_name+"_W_bias")
+        tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
+        tf.add_to_collection(summaryCollection, tf.histogram_summary(w_bias.op.name, w_bias))
         weight_list.append(w)
-        new_head = tf.nn.relu(tf.matmul(nn_head, w, name=layer_name), name=layer_name+"_relu")
-        tf.add_to_collection(summaryCollection, tf.histogram_summary(layer_name+"_relu", new_head))
+        weight_list.append(w_bias)
+
+        new_head = tf.nn.relu(tf.matmul(nn_head, w, name=layer_name) + w_bias, name=layer_name+"_relu")
+        build_activation_summary(new_head, summaryCollection)
         return new_head
 
     input_state_placeholder = tf.placeholder("float",[None,84,84,4], name=summaryCollection+"/state_placeholder")
     normalized = input_state_placeholder / 256.
+    tf.add_to_collection(summaryCollection, tf.histogram_summary("normalized_input", normalized))
 
     nn_head = add_conv_layer(normalized, channels=32, kernel_size=8, stride=4)
     nn_head = add_conv_layer(nn_head, channels=64, kernel_size=4, stride=2)
@@ -53,10 +66,13 @@ def createQNetwork(summaryCollection, action_num):
     nn_head = tf.reshape(nn_head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
 
     nn_head = add_linear_layer(nn_head, size=512)
-    Q = add_linear_layer(nn_head, size=action_num)
 
-    for weight in weight_list:
-        build_activation_summary(weight, summaryCollection)
+    # the last layer is linear without a relu
+    nn_head_size = nn_head.get_shape().as_list()[1]
+    Q_w = tf.Variable(tf.truncated_normal([nn_head_size, action_num], stddev = xavier_std(nn_head_size, action_num), name="Q_W_init"), name="Q_W")
+    weight_list.append(Q_w)
+    Q = tf.matmul(nn_head, Q_w, name="Q")
+    tf.add_to_collection(summaryCollection, tf.histogram_summary("Q", Q))
 
     return input_state_placeholder, Q, weight_list
 
@@ -74,6 +90,7 @@ def build_train_op(DQN, Y, action, action_num):
         batch_loss = batch_delta_linear + batch_delta_quadratic**2
         #batch_loss = (Y - DQN_acted)**2
         loss = tf.reduce_mean(batch_loss)
+        tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_action_0", action[0]))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_average_loss", loss))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_loss_0", batch_loss[0]))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_Y_0", Y[0]))
