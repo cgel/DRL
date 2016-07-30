@@ -26,7 +26,7 @@ def createQNetwork(summaryCollection, action_num):
         nn_head_channels = nn_head.get_shape().as_list()[3]
         w_size = [kernel_size, kernel_size, nn_head_channels, channels]
 
-        w = tf.Variable(tf.truncated_normal(w_size, stddev = xavier_std(nn_head_channels, channels), name=layer_name+"_W_init"), name=layer_name+"_W")
+        w = tf.Variable(tf.truncated_normal(w_size, stddev = 0.06, name=layer_name+"_W_init"), name=layer_name+"_W")
         w_bias = tf.Variable(tf.truncated_normal([channels], stddev = 0, name=layer_name+"_W_bias_init"), name=layer_name+"_W_bias")
         tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
         tf.add_to_collection(summaryCollection, tf.histogram_summary(w_bias.op.name, w_bias))
@@ -43,7 +43,7 @@ def createQNetwork(summaryCollection, action_num):
         layer_name = "linear"+str(linear_layer_counter[0])
         nn_head_size = nn_head.get_shape().as_list()[1]
 
-        w = tf.Variable(tf.truncated_normal([nn_head_size, size], stddev = xavier_std(nn_head_size, size), name=layer_name+"_W_init"), name=layer_name+"_W")
+        w = tf.Variable(tf.truncated_normal([nn_head_size, size], stddev = 0.06, name=layer_name+"_W_init"), name=layer_name+"_W")
         w_bias = tf.Variable(tf.truncated_normal([size], stddev = 0, name=layer_name+"_W_bias_init"), name=layer_name+"_W_bias")
         tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
         tf.add_to_collection(summaryCollection, tf.histogram_summary(w_bias.op.name, w_bias))
@@ -69,7 +69,7 @@ def createQNetwork(summaryCollection, action_num):
 
     # the last layer is linear without a relu
     nn_head_size = nn_head.get_shape().as_list()[1]
-    Q_w = tf.Variable(tf.truncated_normal([nn_head_size, action_num], stddev = xavier_std(nn_head_size, action_num), name="Q_W_init"), name="Q_W")
+    Q_w = tf.Variable(tf.truncated_normal([nn_head_size, action_num], stddev = 0.06, name="Q_W_init"), name="Q_W")
     weight_list.append(Q_w)
     Q = tf.matmul(nn_head, Q_w, name="Q")
     tf.add_to_collection(summaryCollection, tf.histogram_summary("Q", Q))
