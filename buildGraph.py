@@ -27,13 +27,10 @@ def createQNetwork(summaryCollection, action_num):
         w_size = [kernel_size, kernel_size, nn_head_channels, channels]
 
         w = tf.Variable(tf.truncated_normal(w_size, stddev = 0.06, name=layer_name+"_W_init"), name=layer_name+"_W")
-        w_bias = tf.Variable(tf.truncated_normal([channels], stddev = 0, name=layer_name+"_W_bias_init"), name=layer_name+"_W_bias")
         tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
-        tf.add_to_collection(summaryCollection, tf.histogram_summary(w_bias.op.name, w_bias))
         weight_list.append(w)
-        weight_list.append(w_bias)
 
-        new_head = tf.nn.relu(conv2d(nn_head, w, stride, name=layer_name) + w_bias, name=layer_name+"_relu")
+        new_head = tf.nn.relu(conv2d(nn_head, w, stride, name=layer_name), name=layer_name+"_relu")
         tf.add_to_collection(summaryCollection, tf.histogram_summary(layer_name+"_relu", new_head))
         return new_head
 
@@ -44,13 +41,10 @@ def createQNetwork(summaryCollection, action_num):
         nn_head_size = nn_head.get_shape().as_list()[1]
 
         w = tf.Variable(tf.truncated_normal([nn_head_size, size], stddev = 0.06, name=layer_name+"_W_init"), name=layer_name+"_W")
-        w_bias = tf.Variable(tf.truncated_normal([size], stddev = 0, name=layer_name+"_W_bias_init"), name=layer_name+"_W_bias")
         tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
-        tf.add_to_collection(summaryCollection, tf.histogram_summary(w_bias.op.name, w_bias))
         weight_list.append(w)
-        weight_list.append(w_bias)
 
-        new_head = tf.nn.relu(tf.matmul(nn_head, w, name=layer_name) + w_bias, name=layer_name+"_relu")
+        new_head = tf.nn.relu(tf.matmul(nn_head, w, name=layer_name), name=layer_name+"_relu")
         build_activation_summary(new_head, summaryCollection)
         return new_head
 
