@@ -26,7 +26,7 @@ def createQNetwork(summaryCollection, action_num):
         nn_head_channels = nn_head.get_shape().as_list()[3]
         w_size = [kernel_size, kernel_size, nn_head_channels, channels]
 
-        w = tf.Variable(tf.truncated_normal(w_size, stddev = 0.06, name=layer_name+"_W_init"), name=layer_name+"_W")
+        w = tf.Variable(tf.truncated_normal(w_size, stddev = xavier_std(nn_head_channels * kernel_size**2, channels * kernel_size**2), name=layer_name+"_W_init"), name=layer_name+"_W")
         tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
         weight_list.append(w)
 
@@ -40,7 +40,7 @@ def createQNetwork(summaryCollection, action_num):
         layer_name = "linear"+str(linear_layer_counter[0])
         nn_head_size = nn_head.get_shape().as_list()[1]
 
-        w = tf.Variable(tf.truncated_normal([nn_head_size, size], stddev = 0.06, name=layer_name+"_W_init"), name=layer_name+"_W")
+        w = tf.Variable(tf.truncated_normal([nn_head_size, size], stddev = xavier_std(nn_head_size, size), name=layer_name+"_W_init"), name=layer_name+"_W")
         tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
         weight_list.append(w)
 
@@ -70,7 +70,7 @@ def createQNetwork(summaryCollection, action_num):
 
     return input_state_placeholder, Q, weight_list
 
-def build_train_op(DQN, Y, action, action_num):
+def build_train_op(DQN, Y, action, action_num, lr):
     with tf.name_scope("loss"):
         action_one_hot = tf.one_hot(action, action_num, 1., 0., name='action_one_hot')
         DQN_acted = tf.reduce_sum(DQN * action_one_hot, reduction_indices=1, name='DQN_acted')
@@ -91,7 +91,7 @@ def build_train_op(DQN, Y, action, action_num):
         tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_actedDQN_0", DQN_acted[0]))
         #tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_maxDQN_0", tf.reduce_max(DQN[0])))
 
-    opti = tf.train.RMSPropOptimizer(0.00025,0.95,0.95,0.01)
+    opti = tf.train.RMSPropOptimizer(lr,0.95,0.95,0.01)
     grads = opti.compute_gradients(loss)
 
     train_op = opti.apply_gradients(grads) # have to pass global_step ?????
