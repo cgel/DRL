@@ -14,9 +14,10 @@ def conv2d(x, W, stride, name):
 def xavier_std(in_size, out_size):
     return np.sqrt(2./(in_size + out_size))
 
-def createQNetwork(summaryCollection, action_num):
+def createQNetwork(summaryCollection, action_num, action_placeholder):
     conv_layer_counter = [0]
     linear_layer_counter = [0]
+    conditional_linear_layer_counter = [0]
     weight_list = []
 
     def add_conv_layer(nn_head, channels, kernel_size, stride):
@@ -26,7 +27,7 @@ def createQNetwork(summaryCollection, action_num):
         nn_head_channels = nn_head.get_shape().as_list()[3]
         w_size = [kernel_size, kernel_size, nn_head_channels, channels]
 
-        w = tf.Variable(tf.truncated_normal(w_size, stddev = xavier_std(nn_head_channels * kernel_size**2, channels * kernel_size**2), name=layer_name+"_W_init"), name=layer_name+"_W")
+        w = tf.get_variable(layer_name+"_W", w_size, initializer=tf.truncated_normal_initializer(stddev = xavier_std(nn_head_channels * kernel_size**2, channels * kernel_size**2)))
         tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
         weight_list.append(w)
 
@@ -39,8 +40,9 @@ def createQNetwork(summaryCollection, action_num):
         linear_layer_counter[0] +=1
         layer_name = "linear"+str(linear_layer_counter[0])
         nn_head_size = nn_head.get_shape().as_list()[1]
+        w_size = [nn_head_size, size]
 
-        w = tf.Variable(tf.truncated_normal([nn_head_size, size], stddev = xavier_std(nn_head_size, size), name=layer_name+"_W_init"), name=layer_name+"_W")
+        w = tf.get_variable(layer_name+"_W", w_size, initializer=tf.truncated_normal_initializer(stddev = xavier_std(nn_head_size, size)))
         tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
         weight_list.append(w)
 
@@ -48,7 +50,29 @@ def createQNetwork(summaryCollection, action_num):
         build_activation_summary(new_head, summaryCollection)
         return new_head
 
+    ## condition is used as an index, so it must be and integer from 0 to condition_num
+    def add_conditional_linear_layer(nn_head, size, condition, condition_num, _summaryCollection):
+        assert len(nn_head.get_shape()) == 2, "can't add a linear layer to this input"
+        conditional_linear_layer_counter[0] +=1
+        layer_name = "conditional_linear"+str(conditional_linear_layer_counter[0])
+        nn_head_size = nn_head.get_shape().as_list()[1]
+        w_size = [condition_num, nn_head_size, size]
+
+        # The xavier init parameters are not the right ones
+        with tf.device("/cpu:0"):
+            w = tf.get_variable(layer_name+"_W", w_size, initializer=tf.truncated_normal_initializer(stddev = xavier_std(nn_head_size, size)))
+        tf.add_to_collection(_summaryCollection, tf.histogram_summary(w.op.name, w))
+        weight_list.append(w)
+
+        w_condition = tf.gather(w, condition)
+        nn_head = tf.expand_dims(nn_head, 1)
+        new_head = tf.nn.relu(tf.batch_matmul(nn_head, w_condition, name=layer_name), name=layer_name+"_relu")
+        new_head = tf.squeeze(new_head, [1])
+        build_activation_summary(new_head, _summaryCollection)
+        return new_head
+
     input_state_placeholder = tf.placeholder("float",[None,84,84,4], name=summaryCollection+"/state_placeholder")
+    # this should be: input_state_placeholder = tf.placeholder("float",[None,84,84,4], name="state_placeholder")
     normalized = input_state_placeholder / 256.
     tf.add_to_collection(summaryCollection, tf.histogram_summary("normalized_input", normalized))
 
@@ -59,40 +83,61 @@ def createQNetwork(summaryCollection, action_num):
     h_conv3_shape = nn_head.get_shape().as_list()
     nn_head = tf.reshape(nn_head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
 
-    nn_head = add_linear_layer(nn_head, size=512)
+    state = add_linear_layer(nn_head, size=512)
 
-    # the last layer is linear without a relu
-    nn_head_size = nn_head.get_shape().as_list()[1]
-    Q_w = tf.Variable(tf.truncated_normal([nn_head_size, action_num], stddev = 0.06, name="Q_W_init"), name="Q_W")
-    weight_list.append(Q_w)
-    Q = tf.matmul(nn_head, Q_w, name="Q")
-    tf.add_to_collection(summaryCollection, tf.histogram_summary("Q", Q))
+    # lets take this layer as the state for next state predictions
+    nn_head_future = state
+    nn_head_future = add_conditional_linear_layer(nn_head_future, size=256, condition=action_placeholder, condition_num=action_num, _summaryCollection=summaryCollection+"_prediction")
+    future_state = add_conditional_linear_layer(nn_head_future, size=512    , condition=action_placeholder, condition_num=action_num, _summaryCollection=summaryCollection+"_prediction")
 
-    return input_state_placeholder, Q, weight_list
+    def state_to_Q(nn_head, _name, _summaryCollection):
+        # the last layer is linear without a relu
+        nn_head_size = nn_head.get_shape().as_list()[1]
+        Q_w = tf.get_variable("Q_W", [nn_head_size, action_num], initializer=tf.truncated_normal_initializer(stddev = xavier_std(nn_head_size, action_num)))
+        weight_list.append(Q_w)
+        Q = tf.matmul(nn_head, Q_w, name=_name)
+        tf.add_to_collection(_summaryCollection, tf.histogram_summary(_name, Q))
+        return Q
 
-def build_train_op(DQN, Y, action, action_num, lr):
-    with tf.name_scope("loss"):
-        action_one_hot = tf.one_hot(action, action_num, 1., 0., name='action_one_hot')
-        DQN_acted = tf.reduce_sum(DQN * action_one_hot, reduction_indices=1, name='DQN_acted')
+    # the functions state -> Q, and future_state -> future_Q are the same and share parameters
+    Q = state_to_Q(state, "Q", summaryCollection)
+    tf.get_variable_scope().reuse_variables()
+    future_Q = state_to_Q(future_state, "future_Q", summaryCollection+"_prediction")
 
-        #cliping gradient for each example
+    return input_state_placeholder, Q, future_Q, weight_list
+
+def clipped_l2(y, y_t):
+    with tf.name_scope("clipped_l2"):
         delta_grad_clip = 1
-        batch_delta = Y - DQN_acted
+        batch_delta = y - y_t
         batch_delta_abs = tf.abs(batch_delta)
         batch_delta_quadratic = tf.minimum(batch_delta_abs, delta_grad_clip)
         batch_delta_linear = (batch_delta_abs - batch_delta_quadratic)*2
-        batch_loss = batch_delta_linear + batch_delta_quadratic**2
-        #batch_loss = (Y - DQN_acted)**2
-        loss = tf.reduce_mean(batch_loss)
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_action_0", action[0]))
+        batch = batch_delta_linear + batch_delta_quadratic**2
+    return batch
+
+def build_train_op(DQN, Y, action, future_Q, next_max_Q, action_num, lr, alpha=1):
+    with tf.name_scope("loss"):
+        action_one_hot = tf.one_hot(action, action_num, 1., 0., name='action_one_hot')
+        DQN_acted = tf.reduce_sum(DQN * action_one_hot, reduction_indices=1, name='DQN_acted')
+        max_future_Q = tf.reduce_max(future_Q, 1)
+
+        loss = tf.reduce_mean(clipped_l2(Y, DQN_acted))
+        future_loss = tf.reduce_sum(clipped_l2(max_future_Q, next_max_Q), name="future_loss")
+        combined_loss = loss + alpha*future_loss
+
         tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_average_loss", loss))
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_loss_0", batch_loss[0]))
+        tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_average_future_loss", future_loss))
+        tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_average_combined_loss", combined_loss))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_Y_0", Y[0]))
+        tf.add_to_collection("DQN_summaries", tf.scalar_summary("max_future_Q_0", max_future_Q[0]))
+        tf.add_to_collection("DQN_summaries", tf.scalar_summary("next_max_Q_0", next_max_Q[0]))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_actedDQN_0", DQN_acted[0]))
         #tf.add_to_collection("DQN_summaries", tf.scalar_summary("rm_maxDQN_0", tf.reduce_max(DQN[0])))
 
     opti = tf.train.RMSPropOptimizer(lr,0.95,0.95,0.01)
-    grads = opti.compute_gradients(loss)
+    #opti = tf.train.GradientDescentOptimizer(lr)
+    grads = opti.compute_gradients(combined_loss)
 
     train_op = opti.apply_gradients(grads) # have to pass global_step ?????
 
