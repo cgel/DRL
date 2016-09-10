@@ -35,39 +35,22 @@ def createQNetwork(summaryCollection, action_num, action_placeholder):
         build_activation_summary(new_head, summaryCollection)
         return new_head
 
-    def add_linear_layer(nn_head, size):
+    def add_linear_layer(nn_head, size, _summaryCollection, layer_name=None, weight_name=None):
         assert len(nn_head.get_shape()) == 2, "can't add a linear layer to this input"
-        linear_layer_counter[0] +=1
-        layer_name = "linear"+str(linear_layer_counter[0])
+        if layer_name == None:
+            linear_layer_counter[0] +=1
+            layer_name = "linear"+str(linear_layer_counter[0])
+        if weight_name == None:
+            weight_name = layer_name+"_W"
         nn_head_size = nn_head.get_shape().as_list()[1]
         w_size = [nn_head_size, size]
 
-        w = tf.get_variable(layer_name+"_W", w_size, initializer=tf.truncated_normal_initializer(stddev = xavier_std(nn_head_size, size)))
-        tf.add_to_collection(summaryCollection, tf.histogram_summary(w.op.name, w))
-        weight_list.append(w)
+        w = tf.get_variable(weight_name, w_size, initializer=tf.truncated_normal_initializer(stddev = xavier_std(nn_head_size, size)))
+        if tf.get_variable_scope().reuse == False:
+            tf.add_to_collection(_summaryCollection, tf.histogram_summary(w.op.name, w))
+            weight_list.append(w)
 
         new_head = tf.nn.relu(tf.matmul(nn_head, w, name=layer_name), name=layer_name+"_relu")
-        build_activation_summary(new_head, summaryCollection)
-        return new_head
-
-    ## condition is used as an index, so it must be and integer from 0 to condition_num
-    def add_conditional_linear_layer(nn_head, size, condition, condition_num, _summaryCollection):
-        assert len(nn_head.get_shape()) == 2, "can't add a linear layer to this input"
-        conditional_linear_layer_counter[0] +=1
-        layer_name = "conditional_linear"+str(conditional_linear_layer_counter[0])
-        nn_head_size = nn_head.get_shape().as_list()[1]
-        w_size = [condition_num, nn_head_size, size]
-
-        # The xavier init parameters are not the right ones
-        with tf.device("/cpu:0"):
-            w = tf.get_variable(layer_name+"_W", w_size, initializer=tf.truncated_normal_initializer(stddev = xavier_std(nn_head_size, size)))
-        tf.add_to_collection(_summaryCollection, tf.histogram_summary(w.op.name, w))
-        weight_list.append(w)
-
-        w_condition = tf.gather(w, condition)
-        nn_head = tf.expand_dims(nn_head, 1)
-        new_head = tf.nn.relu(tf.batch_matmul(nn_head, w_condition, name=layer_name), name=layer_name+"_relu")
-        new_head = tf.squeeze(new_head, [1])
         build_activation_summary(new_head, _summaryCollection)
         return new_head
 
@@ -81,16 +64,11 @@ def createQNetwork(summaryCollection, action_num, action_placeholder):
     nn_head = add_conv_layer(nn_head, channels=64, kernel_size=3, stride=1)
 
     h_conv3_shape = nn_head.get_shape().as_list()
-    nn_head = tf.reshape(nn_head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
-
-    state = add_linear_layer(nn_head, size=512)
-
-    # lets take this layer as the state for next state predictions
-    nn_head_future = state
-    nn_head_future = add_conditional_linear_layer(nn_head_future, size=256, condition=action_placeholder, condition_num=action_num, _summaryCollection=summaryCollection+"_prediction")
-    future_state = add_conditional_linear_layer(nn_head_future, size=512    , condition=action_placeholder, condition_num=action_num, _summaryCollection=summaryCollection+"_prediction")
+    state = tf.reshape(nn_head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
+    state_shape = state.get_shape().as_list()
 
     def state_to_Q(nn_head, _name, _summaryCollection):
+        nn_head = add_linear_layer(nn_head, size=512, _summaryCollection=_summaryCollection, layer_name="final_linear_"+_name, weight_name="final_linear_Q_W")
         # the last layer is linear without a relu
         nn_head_size = nn_head.get_shape().as_list()[1]
         Q_w = tf.get_variable("Q_W", [nn_head_size, action_num], initializer=tf.truncated_normal_initializer(stddev = xavier_std(nn_head_size, action_num)))
@@ -101,6 +79,14 @@ def createQNetwork(summaryCollection, action_num, action_placeholder):
 
     # the functions state -> Q, and future_state -> future_Q are the same and share parameters
     Q = state_to_Q(state, "Q", summaryCollection)
+
+    # lets take this layer as the state for next state predictions
+    #append one hot condition to head_future
+    action_one_hot = tf.one_hot(action_placeholder, action_num, 1., 0., name='action_one_hot')
+    nn_head_future = tf.concat(1, [action_one_hot, state], name="one_hot_concat_state")
+    nn_head_future = add_linear_layer(nn_head_future, size=512, _summaryCollection=summaryCollection+"_prediction", layer_name="future_state_linear_1")
+    future_state = add_linear_layer(nn_head_future, size=state_shape[1], _summaryCollection=summaryCollection+"_prediction", layer_name="future_state_linear_2")
+
     tf.get_variable_scope().reuse_variables()
     future_Q = state_to_Q(future_state, "future_Q", summaryCollection+"_prediction")
 
