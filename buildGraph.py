@@ -45,7 +45,7 @@ def createQNetwork(input_state, action, action_num, summaryCollection):
         build_activation_summary(new_head, summaryCollection)
         return new_head
 
-    def add_linear_layer(nn_head, size, _summaryCollection, layer_name=None, weight_name=None):
+    def add_linear_layer(nn_head, size, summaryCollection, layer_name=None, weight_name=None):
         assert len(nn_head.get_shape()
                    ) == 2, "can't add a linear layer to this input"
         if layer_name == None:
@@ -59,16 +59,16 @@ def createQNetwork(input_state, action, action_num, summaryCollection):
         w = tf.get_variable(weight_name, w_size, initializer=tf.truncated_normal_initializer(
             stddev=xavier_std(nn_head_size, size)))
         if tf.get_variable_scope().reuse == False:
-            tf.add_to_collection(_summaryCollection,
+            tf.add_to_collection(summaryCollection,
                                  tf.histogram_summary(w.op.name, w))
             weight_list.append(w)
 
         new_head = tf.nn.relu(
             tf.matmul(nn_head, w, name=layer_name), name=layer_name + "_relu")
-        build_activation_summary(new_head, _summaryCollection)
+        build_activation_summary(new_head, summaryCollection)
         return new_head
 
-    def add_conditional_linear_layer(nn_head, condition, condition_size, size, _summaryCollection, layer_name=None, weight_name=None):
+    def add_conditional_linear_layer(nn_head, condition, condition_size, size, summaryCollection, layer_name=None, weight_name=None):
         assert len(nn_head.get_shape()
                    ) == 2, "can't add a linear layer to this input"
         if layer_name == None:
@@ -83,7 +83,7 @@ def createQNetwork(input_state, action, action_num, summaryCollection):
         w = tf.get_variable(weight_name, w_size, initializer=tf.truncated_normal_initializer(
             stddev=xavier_std(nn_head_size, size)))
         if tf.get_variable_scope().reuse == False:
-            tf.add_to_collection(_summaryCollection,
+            tf.add_to_collection(summaryCollection,
                                  tf.histogram_summary(w.op.name, w))
             weight_list.append(w)
 
@@ -91,7 +91,7 @@ def createQNetwork(input_state, action, action_num, summaryCollection):
         new_head = tf.nn.relu(
             tf.batch_matmul(tf.expand_dims(nn_head,1), conditional_w, name=layer_name), name=layer_name + "_relu")
         new_head = tf.squeeze(new_head, [1])
-        build_activation_summary(new_head, _summaryCollection)
+        build_activation_summary(new_head, summaryCollection)
         return new_head
 
     normalized = input_state / 256.
@@ -103,12 +103,14 @@ def createQNetwork(input_state, action, action_num, summaryCollection):
     nn_head = add_conv_layer(nn_head, channels=64, kernel_size=3, stride=1)
 
     h_conv3_shape = nn_head.get_shape().as_list()
-    hidden_state = tf.reshape(
+    nn_head = tf.reshape(
         nn_head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
+
+    hidden_state = add_linear_layer(nn_head, size=256, summaryCollection=summaryCollection)
     hidden_state_shape = hidden_state.get_shape().as_list()
 
-    def hidden_state_to_Q(nn_head, _name, _summaryCollection):
-        nn_head = add_linear_layer(nn_head, size=512, _summaryCollection=_summaryCollection,
+    def hidden_state_to_Q(nn_head, _name, summaryCollection):
+        nn_head = add_linear_layer(nn_head, size=512, summaryCollection=summaryCollection,
                                    layer_name="final_linear_" + _name, weight_name="final_linear_Q_W")
         # the last layer is linear without a relu
         nn_head_size = nn_head.get_shape().as_list()[1]
@@ -116,7 +118,7 @@ def createQNetwork(input_state, action, action_num, summaryCollection):
             stddev=xavier_std(nn_head_size, action_num)))
         weight_list.append(Q_w)
         Q = tf.matmul(nn_head, Q_w, name=_name)
-        tf.add_to_collection(_summaryCollection,
+        tf.add_to_collection(summaryCollection,
                              tf.histogram_summary(_name, Q))
         return Q
 
@@ -125,9 +127,9 @@ def createQNetwork(input_state, action, action_num, summaryCollection):
     Q = hidden_state_to_Q(hidden_state, "Q", summaryCollection)
 
     predicted_next_hidden_state = add_conditional_linear_layer(
-        hidden_state, action, action_num, size=512, _summaryCollection=summaryCollection + "_prediction")
-    predicted_next_hidden_state = add_conditional_linear_layer(
-        predicted_next_hidden_state, action, action_num, size=hidden_state_shape[1], _summaryCollection=summaryCollection + "_prediction")
+        hidden_state, action, action_num, size=256, summaryCollection=summaryCollection + "_prediction")
+    predicted_next_hidden_state = add_linear_layer(
+        predicted_next_hidden_state, size=hidden_state_shape[1], summaryCollection=summaryCollection + "_prediction")
 
     tf.get_variable_scope().reuse_variables()
     predicted_next_Q = hidden_state_to_Q(
