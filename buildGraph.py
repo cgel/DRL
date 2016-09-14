@@ -124,12 +124,8 @@ def createQNetwork(input_state, action, action_num, summaryCollection):
     # share parameters
     Q = hidden_state_to_Q(hidden_state, "Q", summaryCollection)
 
-    action_one_hot = tf.one_hot(
-        action, action_num, 1., 0., name='action_one_hot')
-    predicted_next_hidden_state = tf.concat(
-        1, [action_one_hot, hidden_state], name="one_hot_concat_state")
     predicted_next_hidden_state = add_conditional_linear_layer(
-        predicted_next_hidden_state, action, action_num, size=512, _summaryCollection=summaryCollection + "_prediction")
+        hidden_state, action, action_num, size=512, _summaryCollection=summaryCollection + "_prediction")
     predicted_next_hidden_state = add_conditional_linear_layer(
         predicted_next_hidden_state, action, action_num, size=hidden_state_shape[1], _summaryCollection=summaryCollection + "_prediction")
 
