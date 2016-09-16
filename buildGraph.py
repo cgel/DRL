@@ -59,7 +59,7 @@ def add_linear_layer(nn_head, size, summaryCollection, layer_name=None, weight_n
     build_activation_summary(new_head, summaryCollection)
     return new_head
 
-def add_conditional_linear_layer(nn_head, condition, condition_size, size, summaryCollection, layer_name=None, weight_name=None):
+def add_conditional_linear_layer_concat(nn_head, condition, condition_size, size, summaryCollection, layer_name=None, weight_name=None):
     assert len(nn_head.get_shape()
                ) == 2, "can't add a linear layer to this input"
     if layer_name == None:
@@ -89,6 +89,42 @@ conv_layer_counter = [0]
 linear_layer_counter = [0]
 conditional_linear_layer_counter = [0]
 weight_list = []
+
+def add_conditional_linear_layer_no_gather(nn_head, condition, condition_size, size, summaryCollection, layer_name=None, weight_name=None):
+    assert len(nn_head.get_shape()
+               ) == 2, "can't add a linear layer to this input"
+    if layer_name == None:
+        conditional_linear_layer_counter[0] += 1
+        layer_name = "conditional_linear" + \
+            str(conditional_linear_layer_counter[0])
+    if weight_name == None:
+        weight_name = layer_name + "_W"
+    nn_head_size = nn_head.get_shape().as_list()[1]
+    w_size = [condition_size, nn_head_size, size]
+
+    w = tf.get_variable(weight_name, w_size, initializer=tf.truncated_normal_initializer(
+        stddev=xavier_std(nn_head_size, size)))
+    if tf.get_variable_scope().reuse == False:
+        tf.add_to_collection(summaryCollection,
+                             tf.histogram_summary(w.op.name, w))
+        weight_list.append(w)
+
+    dynamic_batch_size = tf.shape(condition)[0]
+    condition_oh = tf.expand_dims(tf.one_hot(condition, condition_size, 1., 0.),1)
+    tiled_w = tf.tile(w, [dynamic_batch_size, 1,1])
+    tiled_shape = tiled_w.get_shape()
+    tiled_reshaped = tf.reshape(tiled_w, tf.pack([dynamic_batch_size, condition_size, tiled_shape[1]*tiled_shape[2]]))
+    conditional_w = tf.batch_matmul(condition_oh, tiled_reshaped)
+    conditional_w = tf.reshape(conditional_w, tf.pack([dynamic_batch_size, tiled_shape[1], tiled_shape[2]]))
+    new_head = tf.nn.relu(
+        tf.batch_matmul(tf.expand_dims(nn_head,1), conditional_w, name=layer_name), name=layer_name + "_relu")
+    new_head = tf.squeeze(new_head, [1])
+    build_activation_summary(new_head, summaryCollection)
+    return new_head
+
+
+def add_conditional_linear_layer(*args, **kwargs): return add_conditional_linear_layer_no_gather(*args, **kwargs)
+
 
 def hidden_state_to_Q(hidden_state, _name, action_num, summaryCollection):
     nn_head = add_linear_layer(hidden_state, size=512, summaryCollection=summaryCollection,
@@ -140,10 +176,7 @@ def hidden_state_to_next_hidden_state_expanded_concat(hidden_state, action, acti
                              tf.histogram_summary(w.op.name, w))
         weight_list.append(w)
 
-    print(w.dtype)
-    print(action_one_hot.dtype)
-    expanded_action = tf.nn.relu(tf.matmul(action, w), name="expanded_action")
-    print(expanded_action.dtype)
+    expanded_action = tf.nn.relu(tf.matmul(action_one_hot, w), name="expanded_action")
     predicted_next_hidden_state = tf.concat(
         1, [expanded_action, hidden_state], name="one_hot_concat_state")
     predicted_next_hidden_state = add_linear_layer(
@@ -152,15 +185,7 @@ def hidden_state_to_next_hidden_state_expanded_concat(hidden_state, action, acti
         predicted_next_hidden_state, size=hidden_state_shape[1], layer_name="prediction_linear2", summaryCollection=summaryCollection)
     return predicted_next_hidden_state
 
-def hidden_state_to_next_hidden_state_gather(hidden_state, action, action_num, summaryCollection):
-    hidden_state_shape = hidden_state.get_shape().as_list()
-    predicted_next_hidden_state = add_conditional_linear_layer(
-        hidden_state, action, action_num, size=256, summaryCollection=summaryCollection + "_prediction")
-    predicted_next_hidden_state = add_linear_layer(
-        predicted_next_hidden_state, size=hidden_state_shape[1], summaryCollection=summaryCollection + "_prediction")
-    return predicted_next_hidden_state
-
-def hidden_state_to_next_hidden_state_conditional_no_gather(hidden_state, action, action_num, summaryCollection):
+def hidden_state_to_next_hidden_state_conditional(hidden_state, action, action_num, summaryCollection):
     hidden_state_shape = hidden_state.get_shape().as_list()
     predicted_next_hidden_state = add_conditional_linear_layer(
         hidden_state, action, action_num, size=256, summaryCollection=summaryCollection + "_prediction")
@@ -189,9 +214,9 @@ def createQNetwork(input_state, action, action_num, summaryCollection=None):
     Q = hidden_state_to_Q(hidden_state, "Q", action_num, summaryCollection)
     R = hidden_state_to_R(hidden_state, "R", action_num, summaryCollection)
 
-    #predicted_next_hidden_state = hidden_state_to_next_hidden_state_concat(hidden_state, action, action_num, summaryCollection+"_prediction")
-    predicted_next_hidden_state = hidden_state_to_next_hidden_state_expanded_concat(hidden_state, action, action_num, summaryCollection+"_prediction")
-    #predicted_next_hidden_state = hidden_state_to_next_hidden_state_gather(hidden_state, action, action_num, summaryCollection+"_prediction")
+    predicted_next_hidden_state = hidden_state_to_next_hidden_state_concat(hidden_state, action, action_num, summaryCollection+"_prediction")
+    #predicted_next_hidden_state = hidden_state_to_next_hidden_state_expanded_concat(hidden_state, action, action_num, summaryCollection+"_prediction")
+    #predicted_next_hidden_state = hidden_state_to_next_hidden_state_conditional(hidden_state, action, action_num, summaryCollection+"_prediction")
 
 
     tf.get_variable_scope().reuse_variables()
@@ -211,8 +236,10 @@ def clipped_l2(y, y_t, grad_clip=1):
         batch = batch_delta_linear + batch_delta_quadratic**2
     return batch
 
-
 def build_train_op(Q, Y, DQNR, real_R, predicted_next_Q, next_Y, action, action_num, lr, gamma, alpha):
+    print(lr)
+    print(gamma)
+    print(alpha)
     with tf.name_scope("loss"):
         # could be done more efficiently with gather_nd or transpose + gather
         action_one_hot = tf.one_hot(
@@ -222,10 +249,12 @@ def build_train_op(Q, Y, DQNR, real_R, predicted_next_Q, next_Y, action, action_
         DQNR_acted = tf.reduce_sum(
             DQNR * action_one_hot, reduction_indices=1, name='DQN_acted')
 
-        Q_loss = tf.reduce_mean(clipped_l2(Y, DQN_acted))
+        Q_loss = tf.reduce_mean(
+            clipped_l2(Y, DQN_acted), name="Q_loss")
         future_loss = alpha * tf.reduce_sum(clipped_l2(
             predicted_next_Q, next_Y, grad_clip=alpha), name="future_loss")
-        R_loss = tf.reduce_mean(clipped_l2(DQNR_acted, real_R))
+        R_loss = alpha * tf.reduce_mean(
+            lipped_l2(DQNR_acted, real_R), name="R_loss")
 
         # maybe add the linear factor 2(DQNR-real_R)(predicted_next_Q-next_Y)
         combined_loss = Q_loss + future_loss + R_loss
@@ -253,6 +282,9 @@ def build_train_op(Q, Y, DQNR, real_R, predicted_next_Q, next_Y, action, action_
             "main/next_max_Y_0", next_max_Y[0]))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary(
             "main/R_0", DQNR_acted[0]))
+        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
+            "main/R_real_0", real_R[0]))
+
 
     opti = tf.train.RMSPropOptimizer(lr, 0.95, 0.95, 0.01)
     grads = opti.compute_gradients(combined_loss)
