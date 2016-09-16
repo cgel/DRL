@@ -59,6 +59,32 @@ def add_linear_layer(nn_head, size, summaryCollection, layer_name=None, weight_n
     build_activation_summary(new_head, summaryCollection)
     return new_head
 
+def add_conditional_linear_layer(nn_head, condition, condition_size, size, summaryCollection, layer_name=None, weight_name=None):
+    assert len(nn_head.get_shape()
+               ) == 2, "can't add a linear layer to this input"
+    if layer_name == None:
+        conditional_linear_layer_counter[0] += 1
+        layer_name = "conditional_linear" + \
+            str(conditional_linear_layer_counter[0])
+    if weight_name == None:
+        weight_name = layer_name + "_W"
+    nn_head_size = nn_head.get_shape().as_list()[1]
+    w_size = [condition_size, nn_head_size, size]
+
+    w = tf.get_variable(weight_name, w_size, initializer=tf.truncated_normal_initializer(
+        stddev=xavier_std(nn_head_size, size)))
+    if tf.get_variable_scope().reuse == False:
+        tf.add_to_collection(summaryCollection,
+                             tf.histogram_summary(w.op.name, w))
+        weight_list.append(w)
+
+    conditional_w = tf.gather(w, condition)
+    new_head = tf.nn.relu(
+        tf.batch_matmul(tf.expand_dims(nn_head,1), conditional_w, name=layer_name), name=layer_name + "_relu")
+    new_head = tf.squeeze(new_head, [1])
+    build_activation_summary(new_head, summaryCollection)
+    return new_head
+
 conv_layer_counter = [0]
 linear_layer_counter = [0]
 conditional_linear_layer_counter = [0]
@@ -90,7 +116,19 @@ def hidden_state_to_R(hidden_state, _name, action_num, summaryCollection):
                          tf.histogram_summary(_name, R))
     return R
 
-def hidden_state_to_next_hidden_state(hidden_state, action, action_num, summaryCollection):
+def hidden_state_to_next_hidden_state_concat(hidden_state, action, action_num, summaryCollection):
+    hidden_state_shape = hidden_state.get_shape().as_list()
+    action_one_hot = tf.one_hot(
+        action, action_num, 1., 0., name='action_one_hot')
+    predicted_next_hidden_state = tf.concat(
+        1, [action_one_hot, hidden_state], name="one_hot_concat_state")
+    predicted_next_hidden_state = add_linear_layer(
+        hidden_state, size=256, layer_name="prediction_linear1", summaryCollection=summaryCollection)
+    predicted_next_hidden_state = add_linear_layer(
+        predicted_next_hidden_state, size=hidden_state_shape[1], layer_name="prediction_linear2", summaryCollection=summaryCollection)
+    return predicted_next_hidden_state
+
+def hidden_state_to_next_hidden_state_gather(hidden_state, action, action_num, summaryCollection):
     hidden_state_shape = hidden_state.get_shape().as_list()
     action_one_hot = tf.one_hot(
         action, action_num, 1., 0., name='action_one_hot')
@@ -124,6 +162,7 @@ def createQNetwork(input_state, action, action_num, summaryCollection=None):
     R = hidden_state_to_R(hidden_state, "R", action_num, summaryCollection)
 
     predicted_next_hidden_state = hidden_state_to_next_hidden_state(hidden_state, action, action_num, summaryCollection+"_prediction")
+
     tf.get_variable_scope().reuse_variables()
     predicted_next_Q = hidden_state_to_Q(
         predicted_next_hidden_state, "future_Q", action_num, summaryCollection + "_prediction")
@@ -155,8 +194,7 @@ def build_train_op(Q, Y, DQNR, real_R, predicted_next_Q, next_Y, action, action_
         Q_loss = tf.reduce_mean(clipped_l2(Y, DQN_acted))
         future_loss = alpha * tf.reduce_sum(clipped_l2(
             predicted_next_Q, next_Y, grad_clip=alpha), name="future_loss")
-
-        R_loss = clipped_l2(DQNR_acted, real_R)
+        R_loss = tf.reduce_mean(clipped_l2(DQNR_acted, real_R))
 
         # maybe add the linear factor 2(DQNR-real_R)(predicted_next_Q-next_Y)
         combined_loss = Q_loss + future_loss + R_loss
@@ -177,13 +215,13 @@ def build_train_op(Q, Y, DQNR, real_R, predicted_next_Q, next_Y, action, action_
         tf.add_to_collection("DQN_summaries", tf.scalar_summary(
             "main/acted_Q_0", DQN_acted[0]))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "main/acted_Q_prediction_0", DQNR * gamma * max_predicted_next_Q_0))
+            "main/acted_Q_prediction_0", DQNR_acted[0] * gamma * max_predicted_next_Q_0))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary(
             "main/max_predicted_next_Q_0", max_predicted_next_Q_0))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary(
             "main/next_max_Y_0", next_max_Y[0]))
         tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "main/R_0", DQNR[0]))
+            "main/R_0", DQNR_acted[0]))
 
     opti = tf.train.RMSPropOptimizer(lr, 0.95, 0.95, 0.01)
     grads = opti.compute_gradients(combined_loss)
