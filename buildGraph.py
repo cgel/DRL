@@ -128,16 +128,44 @@ def hidden_state_to_next_hidden_state_concat(hidden_state, action, action_num, s
         predicted_next_hidden_state, size=hidden_state_shape[1], layer_name="prediction_linear2", summaryCollection=summaryCollection)
     return predicted_next_hidden_state
 
-def hidden_state_to_next_hidden_state_gather(hidden_state, action, action_num, summaryCollection):
+def hidden_state_to_next_hidden_state_expanded_concat(hidden_state, action, action_num, summaryCollection):
     hidden_state_shape = hidden_state.get_shape().as_list()
     action_one_hot = tf.one_hot(
         action, action_num, 1., 0., name='action_one_hot')
+
+    w = tf.get_variable("expand_action_W", [action_num, 256], initializer=tf.truncated_normal_initializer(
+        stddev=xavier_std(action_num, 256)))
+    if tf.get_variable_scope().reuse == False:
+        tf.add_to_collection(summaryCollection,
+                             tf.histogram_summary(w.op.name, w))
+        weight_list.append(w)
+
+    print(w.dtype)
+    print(action_one_hot.dtype)
+    expanded_action = tf.nn.relu(tf.matmul(action, w), name="expanded_action")
+    print(expanded_action.dtype)
     predicted_next_hidden_state = tf.concat(
-        1, [action_one_hot, hidden_state], name="one_hot_concat_state")
+        1, [expanded_action, hidden_state], name="one_hot_concat_state")
     predicted_next_hidden_state = add_linear_layer(
         hidden_state, size=256, layer_name="prediction_linear1", summaryCollection=summaryCollection)
     predicted_next_hidden_state = add_linear_layer(
         predicted_next_hidden_state, size=hidden_state_shape[1], layer_name="prediction_linear2", summaryCollection=summaryCollection)
+    return predicted_next_hidden_state
+
+def hidden_state_to_next_hidden_state_gather(hidden_state, action, action_num, summaryCollection):
+    hidden_state_shape = hidden_state.get_shape().as_list()
+    predicted_next_hidden_state = add_conditional_linear_layer(
+        hidden_state, action, action_num, size=256, summaryCollection=summaryCollection + "_prediction")
+    predicted_next_hidden_state = add_linear_layer(
+        predicted_next_hidden_state, size=hidden_state_shape[1], summaryCollection=summaryCollection + "_prediction")
+    return predicted_next_hidden_state
+
+def hidden_state_to_next_hidden_state_conditional_no_gather(hidden_state, action, action_num, summaryCollection):
+    hidden_state_shape = hidden_state.get_shape().as_list()
+    predicted_next_hidden_state = add_conditional_linear_layer(
+        hidden_state, action, action_num, size=256, summaryCollection=summaryCollection + "_prediction")
+    predicted_next_hidden_state = add_linear_layer(
+        predicted_next_hidden_state, size=hidden_state_shape[1], summaryCollection=summaryCollection + "_prediction")
     return predicted_next_hidden_state
 
 def createQNetwork(input_state, action, action_num, summaryCollection=None):
@@ -161,7 +189,10 @@ def createQNetwork(input_state, action, action_num, summaryCollection=None):
     Q = hidden_state_to_Q(hidden_state, "Q", action_num, summaryCollection)
     R = hidden_state_to_R(hidden_state, "R", action_num, summaryCollection)
 
-    predicted_next_hidden_state = hidden_state_to_next_hidden_state(hidden_state, action, action_num, summaryCollection+"_prediction")
+    #predicted_next_hidden_state = hidden_state_to_next_hidden_state_concat(hidden_state, action, action_num, summaryCollection+"_prediction")
+    predicted_next_hidden_state = hidden_state_to_next_hidden_state_expanded_concat(hidden_state, action, action_num, summaryCollection+"_prediction")
+    #predicted_next_hidden_state = hidden_state_to_next_hidden_state_gather(hidden_state, action, action_num, summaryCollection+"_prediction")
+
 
     tf.get_variable_scope().reuse_variables()
     predicted_next_Q = hidden_state_to_Q(
