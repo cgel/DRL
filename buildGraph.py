@@ -208,8 +208,8 @@ def createQNetwork(input_state, action, config, Collection=None):
     head = tf.reshape(
         head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
 
-    head = add_relu_layer(head, size=512, Collection=Collection)
-    head = add_relu_layer(head, size=256, Collection=Collection)
+    #head = add_relu_layer(head, size=512, Collection=Collection)
+    #head = add_relu_layer(head, size=256, Collection=Collection)
     hidden_state = head
 
     # the functions state -> Q, and future_state -> future_Q are the same and
@@ -223,6 +223,8 @@ def createQNetwork(input_state, action, config, Collection=None):
         predicted_next_hidden_state = hidden_to_hidden_expanded_concat(hidden_state, action, action_num, Collection)
     elif config.h_to_h == "conditional":
         predicted_next_hidden_state = hidden_to_hidden_conditional(hidden_state, action, action_num, Collection)
+    else:
+        raise "not valid h_to_h"
 
     tf.get_variable_scope().reuse_variables()
     predicted_next_Q = hidden_state_to_Q(
