@@ -1,6 +1,71 @@
 import tensorflow as tf
 import numpy as np
 
+def deepmind_Q(input_state, action, config, Collection=None):
+    action_num = config.action_num
+    normalized = input_state / 256.
+    tf.add_to_collection(Collection + "_summaries", tf.histogram_summary(
+        "normalized_input", normalized))
+
+    head = add_conv_layer(normalized, channels=32,
+                             kernel_size=8, stride=4, Collection=Collection)
+    head = add_conv_layer(head, channels=64,
+                             kernel_size=4, stride=2, Collection=Collection)
+    head = add_conv_layer(head, channels=64,
+                             kernel_size=3, stride=1, Collection=Collection)
+
+    h_conv3_shape = head.get_shape().as_list()
+    head = tf.reshape(
+        head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
+
+    head = add_relu_layer(head, size=512, Collection=Collection)
+    # the last layer is linear without a relu
+    head_size = head.get_shape().as_list()[1]
+
+    Q_w = get_var("Q_W", [head_size, action_num], initializer=tf.truncated_normal_initializer(
+        stddev=xavier_std(head_size, action_num)), Collection=Collection)
+
+    Q = tf.matmul(head, Q_w, name=_name)
+    tf.histogram_summary(_name, Q, collections=Collection + "_summaries"))
+
+    # DQN summary
+    for i in range(action_num):
+        dqni = tf.scalar_summary("DQN/action"+str(i), Q[0, i], collections=["Q_summaries"])
+
+    return Q
+
+def build_train_op(Q, Y, action, config):
+    action_num = config.action_num
+    with tf.name_scope("loss"):
+        # could be done more efficiently with gather_nd or transpose + gather
+        action_one_hot = tf.one_hot(
+            action, action_num, 1., 0., name='action_one_hot')
+        DQN_acted = tf.reduce_sum(
+            Q * action_one_hot, reduction_indices=1, name='DQN_acted')
+        DQNR_acted = tf.reduce_sum(
+            DQNR * action_one_hot, reduction_indices=1, name='DQN_acted')
+
+        Q_loss = tf.reduce_sum(
+            clipped_l2(Y, DQN_acted), name="Q_loss")
+
+        tf.scalar_summary("losses/Q", Q_loss, collections="Q_summaries")
+        tf.scalar_summary("losses/Q", Q_loss, collections="Q_summaries")
+        tf.scalar_summary("losses/next_Q", future_loss, collections="Q_summaries")
+        tf.scalar_summary("losses/R", R_loss, collections="Q_summaries")
+        tf.scalar_summary("losses/loss", loss, collections="Q_summaries")
+        tf.scalar_summary("main/Y_0", Y[0], collections="Q_summaries"))
+        tf.scalar_summary("main/acted_Q_0", DQN_acted[0], collections="Q_summaries")
+
+    train_op, grads = build_rmsprop_optimizer(
+        combined_loss, config.learning_rate, 0.95, 0.01, 1, "graves_rmsprop")
+
+    for grad, var in grads:
+        if grad is not None:
+            tf.add_to_collection("Q_summaries", tf.histogram_summary(
+                var.op.name + '/gradients', grad, name=var.op.name + '/gradients'))
+
+    return train_op
+
 
 def build_activation_summary(x, Collection):
     tensor_name = x.op.name
@@ -20,7 +85,7 @@ def xavier_std(in_size, out_size):
 
 def get_var(name, size, initializer, Collection):
     w = tf.get_variable(name, size, initializer=initializer,
-                        collections=[Collection + "_weights"])
+                        collections=[Collection + "_weights", tf.GraphKeys.VARIABLES])
     if tf.get_variable_scope().reuse == False:
         tf.add_to_collection(Collection + "_summaries",
                              tf.histogram_summary(w.op.name, w))
@@ -190,48 +255,6 @@ def hidden_to_hidden_conditional(hidden_state, action, action_num, Collection):
 def add_conditional_relu_layer(
     *args, **kwargs): return add_conditional_relu_layer_no_gather(*args, **kwargs)
 
-
-def createQNetwork(input_state, action, config, Collection=None):
-    action_num = config.action_num
-    normalized = input_state / 256.
-    tf.add_to_collection(Collection + "_summaries", tf.histogram_summary(
-        "normalized_input", normalized))
-
-    head = add_conv_layer(normalized, channels=32,
-                             kernel_size=8, stride=4, Collection=Collection)
-    head = add_conv_layer(head, channels=64,
-                             kernel_size=4, stride=2, Collection=Collection)
-    head = add_conv_layer(head, channels=64,
-                             kernel_size=3, stride=1, Collection=Collection)
-
-    h_conv3_shape = head.get_shape().as_list()
-    head = tf.reshape(
-        head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
-
-    #head = add_relu_layer(head, size=512, Collection=Collection)
-    #head = add_relu_layer(head, size=256, Collection=Collection)
-    hidden_state = head
-
-    # the functions state -> Q, and future_state -> future_Q are the same and
-    # share parameters
-    Q = hidden_state_to_Q(hidden_state, "Q", action_num, Collection)
-    R = hidden_state_to_R(hidden_state, "R", action_num, Collection)
-
-    if config.h_to_h == "oh_concat":
-        predicted_next_hidden_state = hidden_to_hidden_concat(hidden_state, action, action_num, Collection)
-    elif config.h_to_h == "expanded_concat":
-        predicted_next_hidden_state = hidden_to_hidden_expanded_concat(hidden_state, action, action_num, Collection)
-    elif config.h_to_h == "conditional":
-        predicted_next_hidden_state = hidden_to_hidden_conditional(hidden_state, action, action_num, Collection)
-    else:
-        raise "not valid h_to_h"
-
-    tf.get_variable_scope().reuse_variables()
-    predicted_next_Q = hidden_state_to_Q(
-        predicted_next_hidden_state, "future_Q", action_num, Collection + "_prediction")
-
-    return Q, R, predicted_next_Q
-
 def clipped_l2(y, y_t, grad_clip=1):
     with tf.name_scope("clipped_l2"):
         batch_delta = y - y_t
@@ -242,7 +265,7 @@ def clipped_l2(y, y_t, grad_clip=1):
         batch = batch_delta_linear + batch_delta_quadratic**2 / 2
     return batch
 
-def build_train_op(Q, Y, DQNR, real_R, predicted_next_Q, next_Y, action, config):
+def build_train_op_prediction(Q, Y, DQNR, real_R, predicted_next_Q, next_Y, action, config):
     action_num = config.action_num
     with tf.name_scope("loss"):
         # could be done more efficiently with gather_nd or transpose + gather
@@ -265,40 +288,22 @@ def build_train_op(Q, Y, DQNR, real_R, predicted_next_Q, next_Y, action, config)
 
         max_predicted_next_Q_0 = tf.reduce_max(predicted_next_Q, 1)[0]
         next_max_Y = tf.reduce_max(next_Y, 1)
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "losses/Q", Q_loss))
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "losses/next_Q", future_loss))
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "losses/R", R_loss))
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "losses/combined", combined_loss))
 
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "main/Y_0", Y[0]))
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "main/acted_Q_0", DQN_acted[0]))
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "main/acted_Q_prediction_0", DQNR_acted[0] + config.gamma * max_predicted_next_Q_0))
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "main/max_predicted_next_Q_0", max_predicted_next_Q_0))
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "main/next_max_Y_0", next_max_Y[0]))
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "main/R_0", DQNR_acted[0]))
-        tf.add_to_collection("DQN_summaries", tf.scalar_summary(
-            "main/R_real_0", real_R[0]))
+        tf.scalar_summary("losses/Q", Q_loss, collections="Q_summaries")
+        tf.scalar_summary("losses/Q", Q_loss, collections="Q_summaries")
+        tf.scalar_summary("losses/next_Q", future_loss, collections="Q_summaries")
+        tf.scalar_summary("losses/R", R_loss, collections="Q_summaries")
+        tf.scalar_summary("losses/combined", combined_loss, collections="Q_summaries")
+        tf.scalar_summary("main/Y_0", Y[0], collections="Q_summaries"))
+        tf.scalar_summary("main/acted_Q_0", DQN_acted[0], collections="Q_summaries")
+        tf.scalar_summary("main/acted_Q_prediction_0", DQNR_acted[0] + config.gamma * max_predicted_next_Q_0, collections="Q_summaries"))
+        tf.scalar_summary("main/max_predicted_next_Q_0", max_predicted_next_Q_0, collections="Q_summaries"))
+        tf.scalar_summary("main/next_max_Y_0", next_max_Y[0], collections="Q_summaries"))
+        tf.scalar_summary("main/R_0", DQNR_acted[0], collections="Q_summaries"))
+        tf.scalar_summary("main/R_real_0", real_R[0], collections="Q_summaries"))
 
     train_op, grads = build_rmsprop_optimizer(
         combined_loss, config.learning_rate, 0.95, 0.01, 1, "graves_rmsprop")
-
-    for grad, var in grads:
-        if grad is not None:
-            tf.add_to_collection("DQN_summaries", tf.histogram_summary(
-                var.op.name + '/gradients', grad, name=var.op.name + '/gradients'))
-
-    return train_op
-
 
 def build_rmsprop_optimizer(loss, learning_rate, rmsprop_decay, rmsprop_constant, gradient_clip, version):
     with tf.name_scope('rmsprop'):
