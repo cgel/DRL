@@ -26,7 +26,7 @@ def deepmind_Q(input_state, action, config, Collection=None):
         stddev=xavier_std(head_size, action_num)), Collection=Collection)
 
     Q = tf.matmul(head, Q_w, name=_name)
-    tf.histogram_summary(_name, Q, collections=Collection + "_summaries"))
+    tf.histogram_summary(_name, Q, collections=Collection + "_summaries")
 
     # DQN summary
     for i in range(action_num):
@@ -53,7 +53,7 @@ def build_train_op(Q, Y, action, config):
         tf.scalar_summary("losses/next_Q", future_loss, collections="Q_summaries")
         tf.scalar_summary("losses/R", R_loss, collections="Q_summaries")
         tf.scalar_summary("losses/loss", loss, collections="Q_summaries")
-        tf.scalar_summary("main/Y_0", Y[0], collections="Q_summaries"))
+        tf.scalar_summary("main/Y_0", Y[0], collections="Q_summaries")
         tf.scalar_summary("main/acted_Q_0", DQN_acted[0], collections="Q_summaries")
 
     train_op, grads = build_rmsprop_optimizer(
@@ -294,13 +294,13 @@ def build_train_op_prediction(Q, Y, DQNR, real_R, predicted_next_Q, next_Y, acti
         tf.scalar_summary("losses/next_Q", future_loss, collections="Q_summaries")
         tf.scalar_summary("losses/R", R_loss, collections="Q_summaries")
         tf.scalar_summary("losses/combined", combined_loss, collections="Q_summaries")
-        tf.scalar_summary("main/Y_0", Y[0], collections="Q_summaries"))
+        tf.scalar_summary("main/Y_0", Y[0], collections="Q_summaries")
         tf.scalar_summary("main/acted_Q_0", DQN_acted[0], collections="Q_summaries")
-        tf.scalar_summary("main/acted_Q_prediction_0", DQNR_acted[0] + config.gamma * max_predicted_next_Q_0, collections="Q_summaries"))
-        tf.scalar_summary("main/max_predicted_next_Q_0", max_predicted_next_Q_0, collections="Q_summaries"))
-        tf.scalar_summary("main/next_max_Y_0", next_max_Y[0], collections="Q_summaries"))
-        tf.scalar_summary("main/R_0", DQNR_acted[0], collections="Q_summaries"))
-        tf.scalar_summary("main/R_real_0", real_R[0], collections="Q_summaries"))
+        tf.scalar_summary("main/acted_Q_prediction_0", DQNR_acted[0] + config.gamma * max_predicted_next_Q_0, collections="Q_summaries")
+        tf.scalar_summary("main/max_predicted_next_Q_0", max_predicted_next_Q_0, collections="Q_summaries")
+        tf.scalar_summary("main/next_max_Y_0", next_max_Y[0], collections="Q_summaries")
+        tf.scalar_summary("main/R_0", DQNR_acted[0], collections="Q_summaries")
+        tf.scalar_summary("main/R_real_0", real_R[0], collections="Q_summaries")
 
     train_op, grads = build_rmsprop_optimizer(
         combined_loss, config.learning_rate, 0.95, 0.01, 1, "graves_rmsprop")
