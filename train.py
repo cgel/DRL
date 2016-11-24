@@ -3,6 +3,7 @@ import gym
 import time
 import string
 import os
+import re
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("-batch_size", type=int, default=32)
@@ -11,7 +12,7 @@ parser.add_argument("-steps_before_training", type=int, default=12500)
 parser.add_argument("-exploration_steps", type=int, default=250000)
 parser.add_argument("-sync_rate", type=int, default=2500)
 parser.add_argument("-save_summary_rate", type=int, default=10000)
-parser.add_argument("-device", default="/gpu:0")
+parser.add_argument("-device", default="0")
 parser.add_argument("-gamma", type=float, default=0.99)
 parser.add_argument("-learning_rate", type=float, default=0.00025)
 parser.add_argument("-initial_epsilon", type=float, default=1.)
@@ -22,13 +23,14 @@ parser.add_argument("-logging", default="")
 parser.add_argument("-transition_function", default="oh_concat")
 parser.add_argument("-alpha", type=float, default=0.1)
 config = parser.parse_args()
-config.num_episodes = 10000
-config.log_online_summary_rate = 100
+config.num_episodes = 50000
+config.log_online_summary_rate = 50
 config.log_perf_summary_rate = 1000
 config.save_rate = 1000
 config.log_percent_rate = 1000
 config.test_run_num = 20
 config.logging = config.logging not in ["0", "false", "False"]
+config.device = "/gpu:"+config.device
 print("Logging: " + str(config.logging))
 if config.transition_function not in [
         "oh_concat", "expanded_concat", "conditional"]:
@@ -65,13 +67,16 @@ if config.logging:
     for var in config_vars_dict:
         config_log_file.write(var + ": " + str(config_vars_dict[var]) + "\n")
     config_log_file.close()
+else:
+    #Not defined
+    summary_writter = 0
 
 agent = Agent(config, sess, summary_writter)
 
 saver = tf.train.Saver(max_to_keep=20)
 if config.load_checkpoint != "":
-    ckpt_file = checkpoint_path + config.load_checkpoint + "_run "
-    print("loading: " + '"' + config.load_checkpoint + '"')
+    ckpt_file = "log/"+re.search(r"\d+", config.load_checkpoint).group()+"/checkpoint/"+config.load_checkpoint
+    print("loading: " + ckpt_file)
     saver.restore(sess, ckpt_file)
 else:
     sess.run(tf.initialize_all_variables())
