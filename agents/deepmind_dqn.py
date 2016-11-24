@@ -39,7 +39,7 @@ class Agent:
             for W_pair in zip(
                     tf.get_collection("Target_weights"),
                     tf.get_collection("Normal_weights")):
-                W_pair[0].assign(W_pair[1])
+                self.sync_QT_op.append(W_pair[0].assign(W_pair[1]))
             self.train_op = commonOps.build_train_op(
                 self.Q, self.Y, self.action, config, "Normal")
             self.Q_summary_op = tf.merge_summary(
