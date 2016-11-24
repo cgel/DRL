@@ -35,11 +35,11 @@ class Agent:
             with tf.variable_scope("QT"):
                 self.QT = commonOps.deepmind_Q(
                     self.stateT_ph, config, "Target")
-            self.sync_QT_op = [
-                W_pair[0].assign(
-                    W_pair[1]) for W_pair in zip(
-                    tf.get_collection("Normal_weights"),
-                    tf.get_collection("Target_weights"))]
+            self.sync_QT_op = []
+            for W_pair in zip(
+                    tf.get_collection("Target_weights"),
+                    tf.get_collection("Normal_weights")):
+                W_pair[0].assign(W_pair[1])
             self.train_op = commonOps.build_train_op(
                 self.Q, self.Y, self.action, config, "Normal")
             self.Q_summary_op = tf.merge_summary(
@@ -150,7 +150,8 @@ class Agent:
     def epsilon(self):
         if self.step_count < self.config.exploration_steps:
             return self.config.initial_epsilon - \
-                ((self.config.initial_epsilon - self.config.final_epsilon) / self.config.exploration_steps) * self.step_count
+                ((self.config.initial_epsilon - self.config.final_epsilon) /
+                 self.config.exploration_steps) * self.step_count
         else:
             return self.config.final_epsilon
 
