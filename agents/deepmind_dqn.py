@@ -100,7 +100,7 @@ class Agent:
 
             # simplify with np
             QT_max_action = np.max(QT_np, 1)
-            Y = reward_batch + self.config.gamma*QT_max_action*terminal_batch
+            Y = reward_batch + self.config.gamma*QT_max_action*(1-terminal_batch)
 
             feed_dict = {self.state_ph: state_batch, self.action_ph: action_batch, self.Y_ph: Y}
             self.sess.run(self.enqueue_op, feed_dict=feed_dict)
