@@ -1,5 +1,3 @@
 *.pyc
-log/
-checkpoint/
 roms/
 .ipynb_checkpoints/

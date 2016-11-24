@@ -13,7 +13,7 @@ class Agent:
         self.sess = session
         self.RM = ReplayMemory(config)
         self.summary_writter = summary_writter
-        self.step = 0
+        self.step_count = 0
         self.episode = 0
         self.training = True
         with tf.device(config.device):
@@ -25,95 +25,82 @@ class Agent:
             q = tf.FIFOQueue(2, [ph.dtype for ph in placeholder_list])
             self.enqueue_op = q.enqueue(placeholder_list)
             self.state, self.action, self.Y = q.dequeue()
+            self.state.set_shape(self.state_ph.get_shape())
             self.stateT_ph = tf.placeholder(
-                tf.float32, [None, 84, 84, 4], name="next_state_ph")
+                tf.float32, [None, 84, 84, 4], name="stateT_ph")
             with tf.variable_scope("Q"):
-                self.Q = commonOps.deepmind_Q(self.state, config, "Q")
+                self.Q = commonOps.deepmind_Q(self.state, config, "Normal")
             with tf.variable_scope("QT"):
-                self.QT = commonOps.deepmind_Q(self.stateT_ph, config, "QT")
-            self.sync_QT_op = [W_pair[0].assign(W_pair[1]) for W_pair in zip(tf.get_collection("QT_weights"), tf.get_collection("Q_weights"))]
-            self.train_op = commonOps.build_train_op(self.Q, self.Y, self.action, config)
+                self.QT = commonOps.deepmind_Q(self.stateT_ph, config, "Target")
+            self.sync_QT_op = [W_pair[0].assign(W_pair[1]) for W_pair in zip(tf.get_collection("Normal_weights"), tf.get_collection("Target_weights"))]
+            self.train_op = commonOps.build_train_op(self.Q, self.Y, self.action, config, "Normal")
             self.Q_summary_op = tf.merge_summary(
-                tf.get_collection("DQN_summaries"))
+                tf.get_collection("Normal_summaries"))
             self.QT_summary_op = tf.merge_summary(
-                tf.get_collection("DQNT_summaries"))
-
+                tf.get_collection("Target_summaries"))
         self.reset_game()
-
-        self.enqueue_from_RM_thread = threading.Thread(target=self.enqueue_from_RM, daemon=False)
+        self.enqueue_from_RM_thread = threading.Thread(target=self.enqueue_from_RM)
+        self.enqueue_from_RM_thread.daemon = True
         self.stop_enqueuing = threading.Event()
-
+        self.timeout_option = tf.RunOptions(timeout_in_ms=5000)
 
     def step(self, x, r):
         if self.training:
             if not self.episode_begining:
-                self.RM.add(self.game_state[:,:,-1], self.game_action, self.game_reward, False)
+                self.RM.add(self.game_state[:,:,:,-1], self.game_action, self.game_reward, False)
             else:
                 self.episode_begining = False
             self.game_action = self.e_greedy_action(self.epsilon())
             self.observe(x, r)
             self.update()
-            self.step += 1
+            self.step_count += 1
         else:
             self.game_action = self.e_greedy_action(0.01)
-            self.observe(x)
+            self.observe(x, r)
         return self.game_action
 
     # Add the transition to RM and reset the internal state for the next episode
     def done(self):
         if self.training:
-            self.RM.add(self.game_state[:,:,-1], self.action, self.reward, True)
-        self.reset_game_state()
+            self.RM.add(self.game_state[:,:,:,-1], self.game_action, self.game_reward, True)
+        self.reset_game()
 
     def observe(self, x, r):
         self.game_reward = r
         x_ = cv2.resize(x, (84, 84))
-        self.game_state.roll(-1, axis=3)
+        x_ = cv2.cvtColor(x_, cv2.COLOR_RGB2GRAY)
+        np.roll(self.game_state, -1, axis=3)
         self.game_state[0, :, :, -1] = x_
 
-        x_ = cv2.resize(x, (84, 84))
-        self.game_state.roll(-1, axis=3)
-        self.game_state[0, :, :, -1] = x_
-
-
-    timeout_option = tf.RunOptions(timeout_in_ms=5000)
     def update(self):
-        if self.step > self.config.steps_before_training:
+        if self.step_count > self.config.steps_before_training:
             if self.enqueue_from_RM_thread.isAlive() == False:
                 self.enqueue_from_RM_thread.start()
 
-            if self.config.logging and self.step % self.config.save_summary_rate == 0:
+            if self.config.logging and self.step_count % self.config.save_summary_rate == 0:
                 _, Q_summary_str = self.sess.run(
-                    [self.train_op, self.Q_summary_op], options=timeout_option)
-                self.summary_writter.add_summary(Q_summary_str, self.step)
+                    [self.train_op, self.Q_summary_op], options=self.timeout_option)
+                self.summary_writter.add_summary(Q_summary_str, self.step_count)
             else:
                 _ = self.sess.run(self.train_op, options=self.timeout_option)
-
-            if self.step % self.config.sync_rate == 0:
+            if self.step_count % self.config.sync_rate == 0:
                 self.sess.run(self.sync_QT_op)
 
     def enqueue_from_RM(self):
         print("Starting enqueue thread")
         while not self.stop_enqueuing.isSet():
-            state_batch, action_batch, reward_batch, next_state_batch, terminal_batch, _ = RM.sample_transition_batch()
-            if self.config.logging and self.step % self.config.save_summary_rate == 0:
+            state_batch, action_batch, reward_batch, next_state_batch, terminal_batch, _ = self.RM.sample_transition_batch()
+            if self.config.logging and self.step_count % self.config.save_summary_rate == 0:
                 QT_np, QT_summary_str = self.sess.run([self.QT, self.QT_summary_op], feed_dict={
-                                                   self.stateT_ph:next_state_batch})
-                self.summary_writter.add_summary(QT_summary_str, self.step)
+                                                   self.stateT_ph:next_state_batch}, options=self.timeout_option)
+                self.summary_writter.add_summary(QT_summary_str, self.step_count)
             else:
                 QT_np = self.sess.run(
-                    self.QT, feed_dict={self.stateT_ph:next_state_batch})
+                    self.QT, feed_dict={self.stateT_ph:next_state_batch}, options=self.timeout_option)
 
             # simplify with np
-            DQNT_max_action_batch = np.max(QT_np, 1)
-            Y = []
-            for i in range(state_batch.shape[0]):
-                terminal = terminal_batch[i]
-                if terminal:
-                    Y.append(reward_batch[i])
-                else:
-                    Y.append(reward_batch[
-                             i] + self.config.gamma * DQNT_max_action_batch[i])
+            QT_max_action = np.max(QT_np, 1)
+            Y = reward_batch + self.config.gamma*QT_max_action*terminal_batch
 
             feed_dict = {self.state_ph: state_batch, self.action_ph: action_batch, self.Y_ph: Y}
             self.sess.run(self.enqueue_op, feed_dict=feed_dict)
@@ -126,9 +113,6 @@ class Agent:
             action = np.argmax(self.sess.run(self.Q, feed_dict={self.state: self.game_state})[0])
         return action
 
-    def training(self, t=True):
-        self.training = t
-
     def testing(self, t=True):
         self.training = not t
 
@@ -137,8 +121,8 @@ class Agent:
         self.game_state = np.zeros((1, 84, 84, self.config.buff_size), dtype=np.uint8)
 
     def epsilon(self):
-        if self.step < self.config.exploration_steps:
-            return self.config.initial_epsilon - ((self.config.initial_epsilon - self.config.final_epsilon) / self.config.exploration_steps) * self.step
+        if self.step_count < self.config.exploration_steps:
+            return self.config.initial_epsilon - ((self.config.initial_epsilon - self.config.final_epsilon) / self.config.exploration_steps) * self.step_count
         else:
             return self.config.final_epsilon
 

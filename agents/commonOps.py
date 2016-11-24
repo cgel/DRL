@@ -1,8 +1,7 @@
 import tensorflow as tf
 import numpy as np
 
-def deepmind_Q(input_state, action, config, Collection=None):
-    action_num = config.action_num
+def deepmind_Q(input_state, config, Collection=None):
     normalized = input_state / 256.
     tf.add_to_collection(Collection + "_summaries", tf.histogram_summary(
         "normalized_input", normalized))
@@ -22,47 +21,39 @@ def deepmind_Q(input_state, action, config, Collection=None):
     # the last layer is linear without a relu
     head_size = head.get_shape().as_list()[1]
 
-    Q_w = get_var("Q_W", [head_size, action_num], initializer=tf.truncated_normal_initializer(
-        stddev=xavier_std(head_size, action_num)), Collection=Collection)
+    Q_w = get_var("Q_W", [head_size, config.action_num], initializer=tf.truncated_normal_initializer(
+        stddev=xavier_std(head_size, config.action_num)), Collection=Collection)
 
-    Q = tf.matmul(head, Q_w, name=_name)
-    tf.histogram_summary(_name, Q, collections=Collection + "_summaries")
+    Q = tf.matmul(head, Q_w, name="Q")
+    tf.histogram_summary("Q", Q, collections=Collection + "_summaries")
 
     # DQN summary
-    for i in range(action_num):
+    for i in range(config.action_num):
         dqni = tf.scalar_summary("DQN/action"+str(i), Q[0, i], collections=["Q_summaries"])
 
     return Q
 
-def build_train_op(Q, Y, action, config):
-    action_num = config.action_num
+def build_train_op(Q, Y, action, config, Collection):
     with tf.name_scope("loss"):
         # could be done more efficiently with gather_nd or transpose + gather
         action_one_hot = tf.one_hot(
-            action, action_num, 1., 0., name='action_one_hot')
-        DQN_acted = tf.reduce_sum(
+            action, config.action_num, 1., 0., name='action_one_hot')
+        Q_acted = tf.reduce_sum(
             Q * action_one_hot, reduction_indices=1, name='DQN_acted')
-        DQNR_acted = tf.reduce_sum(
-            DQNR * action_one_hot, reduction_indices=1, name='DQN_acted')
 
-        Q_loss = tf.reduce_sum(
-            clipped_l2(Y, DQN_acted), name="Q_loss")
+        loss = tf.reduce_sum(
+            clipped_l2(Y, Q_acted), name="loss")
 
-        tf.scalar_summary("losses/Q", Q_loss, collections="Q_summaries")
-        tf.scalar_summary("losses/Q", Q_loss, collections="Q_summaries")
-        tf.scalar_summary("losses/next_Q", future_loss, collections="Q_summaries")
-        tf.scalar_summary("losses/R", R_loss, collections="Q_summaries")
-        tf.scalar_summary("losses/loss", loss, collections="Q_summaries")
-        tf.scalar_summary("main/Y_0", Y[0], collections="Q_summaries")
-        tf.scalar_summary("main/acted_Q_0", DQN_acted[0], collections="Q_summaries")
+        tf.scalar_summary("losses/loss", loss, collections=[Collection+"_summaries"])
+        tf.scalar_summary("main/Y_0", Y[0], collections=[Collection+"_summaries"])
+        tf.scalar_summary("main/acted_Q_0", Q_acted[0], collections=[Collection+"_summaries"])
 
     train_op, grads = build_rmsprop_optimizer(
-        combined_loss, config.learning_rate, 0.95, 0.01, 1, "graves_rmsprop")
+        loss, config.learning_rate, 0.95, 0.01, 1, "graves_rmsprop")
 
     for grad, var in grads:
         if grad is not None:
-            tf.add_to_collection("Q_summaries", tf.histogram_summary(
-                var.op.name + '/gradients', grad, name=var.op.name + '/gradients'))
+            tf.histogram_summary(var.op.name + '/gradients', grad, name=var.op.name + '/gradients', collections=[Collection+"_summaries"])
 
     return train_op
 
@@ -78,10 +69,8 @@ def build_activation_summary(x, Collection):
 def conv2d(x, W, stride, name):
     return tf.nn.conv2d(x, W, strides=[1, stride, stride, 1], padding="VALID", name=name)
 
-
 def xavier_std(in_size, out_size):
     return np.sqrt(2. / (in_size + out_size))
-
 
 def get_var(name, size, initializer, Collection):
     w = tf.get_variable(name, size, initializer=initializer,
@@ -90,7 +79,6 @@ def get_var(name, size, initializer, Collection):
         tf.add_to_collection(Collection + "_summaries",
                              tf.histogram_summary(w.op.name, w))
     return w
-
 
 def add_conv_layer(head, channels, kernel_size, stride, Collection):
     assert len(head.get_shape()
