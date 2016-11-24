@@ -6,7 +6,9 @@ import threading
 from replayMemory import ReplayMemory
 import commonOps
 
+
 class Agent:
+
     def __init__(self, config, session, summary_writter):
         # build the net
         self.config = config
@@ -31,15 +33,22 @@ class Agent:
             with tf.variable_scope("Q"):
                 self.Q = commonOps.deepmind_Q(self.state, config, "Normal")
             with tf.variable_scope("QT"):
-                self.QT = commonOps.deepmind_Q(self.stateT_ph, config, "Target")
-            self.sync_QT_op = [W_pair[0].assign(W_pair[1]) for W_pair in zip(tf.get_collection("Normal_weights"), tf.get_collection("Target_weights"))]
-            self.train_op = commonOps.build_train_op(self.Q, self.Y, self.action, config, "Normal")
+                self.QT = commonOps.deepmind_Q(
+                    self.stateT_ph, config, "Target")
+            self.sync_QT_op = [
+                W_pair[0].assign(
+                    W_pair[1]) for W_pair in zip(
+                    tf.get_collection("Normal_weights"),
+                    tf.get_collection("Target_weights"))]
+            self.train_op = commonOps.build_train_op(
+                self.Q, self.Y, self.action, config, "Normal")
             self.Q_summary_op = tf.merge_summary(
                 tf.get_collection("Normal_summaries"))
             self.QT_summary_op = tf.merge_summary(
                 tf.get_collection("Target_summaries"))
         self.reset_game()
-        self.enqueue_from_RM_thread = threading.Thread(target=self.enqueue_from_RM)
+        self.enqueue_from_RM_thread = threading.Thread(
+            target=self.enqueue_from_RM)
         self.enqueue_from_RM_thread.daemon = True
         self.stop_enqueuing = threading.Event()
         self.timeout_option = tf.RunOptions(timeout_in_ms=5000)
@@ -47,7 +56,9 @@ class Agent:
     def step(self, x, r):
         if self.training:
             if not self.episode_begining:
-                self.RM.add(self.game_state[:,:,:,-1], self.game_action, self.game_reward, False)
+                self.RM.add(
+                    self.game_state[
+                        :, :, :, -1], self.game_action, self.game_reward, False)
             else:
                 self.episode_begining = False
             self.game_action = self.e_greedy_action(self.epsilon())
@@ -59,10 +70,13 @@ class Agent:
             self.observe(x, r)
         return self.game_action
 
-    # Add the transition to RM and reset the internal state for the next episode
+    # Add the transition to RM and reset the internal state for the next
+    # episode
     def done(self):
         if self.training:
-            self.RM.add(self.game_state[:,:,:,-1], self.game_action, self.game_reward, True)
+            self.RM.add(
+                self.game_state[
+                    :, :, :, -1], self.game_action, self.game_reward, True)
         self.reset_game()
 
     def observe(self, x, r):
@@ -80,7 +94,8 @@ class Agent:
             if self.config.logging and self.step_count % self.config.save_summary_rate == 0:
                 _, Q_summary_str = self.sess.run(
                     [self.train_op, self.Q_summary_op], options=self.timeout_option)
-                self.summary_writter.add_summary(Q_summary_str, self.step_count)
+                self.summary_writter.add_summary(
+                    Q_summary_str, self.step_count)
             else:
                 _ = self.sess.run(self.train_op, options=self.timeout_option)
             if self.step_count % self.config.sync_rate == 0:
@@ -92,17 +107,25 @@ class Agent:
             state_batch, action_batch, reward_batch, next_state_batch, terminal_batch, _ = self.RM.sample_transition_batch()
             if self.config.logging and self.step_count % self.config.save_summary_rate == 0:
                 QT_np, QT_summary_str = self.sess.run([self.QT, self.QT_summary_op], feed_dict={
-                                                   self.stateT_ph:next_state_batch}, options=self.timeout_option)
-                self.summary_writter.add_summary(QT_summary_str, self.step_count)
+                    self.stateT_ph: next_state_batch}, options=self.timeout_option)
+                self.summary_writter.add_summary(
+                    QT_summary_str, self.step_count)
             else:
                 QT_np = self.sess.run(
-                    self.QT, feed_dict={self.stateT_ph:next_state_batch}, options=self.timeout_option)
+                    self.QT,
+                    feed_dict={
+                        self.stateT_ph: next_state_batch},
+                    options=self.timeout_option)
 
             # simplify with np
             QT_max_action = np.max(QT_np, 1)
-            Y = reward_batch + self.config.gamma*QT_max_action*(1-terminal_batch)
+            Y = reward_batch + self.config.gamma * \
+                QT_max_action * (1 - terminal_batch)
 
-            feed_dict = {self.state_ph: state_batch, self.action_ph: action_batch, self.Y_ph: Y}
+            feed_dict = {
+                self.state_ph: state_batch,
+                self.action_ph: action_batch,
+                self.Y_ph: Y}
             self.sess.run(self.enqueue_op, feed_dict=feed_dict)
         print("Closing enqueue thread")
 
@@ -110,7 +133,10 @@ class Agent:
         if np.random.uniform() < epsilon:
             action = random.randint(0, self.config.action_num - 1)
         else:
-            action = np.argmax(self.sess.run(self.Q, feed_dict={self.state: self.game_state})[0])
+            action = np.argmax(
+                self.sess.run(
+                    self.Q, feed_dict={
+                        self.state: self.game_state})[0])
         return action
 
     def testing(self, t=True):
@@ -118,11 +144,13 @@ class Agent:
 
     def reset_game(self):
         self.episode_begining = True
-        self.game_state = np.zeros((1, 84, 84, self.config.buff_size), dtype=np.uint8)
+        self.game_state = np.zeros(
+            (1, 84, 84, self.config.buff_size), dtype=np.uint8)
 
     def epsilon(self):
         if self.step_count < self.config.exploration_steps:
-            return self.config.initial_epsilon - ((self.config.initial_epsilon - self.config.final_epsilon) / self.config.exploration_steps) * self.step_count
+            return self.config.initial_epsilon - \
+                ((self.config.initial_epsilon - self.config.final_epsilon) / self.config.exploration_steps) * self.step_count
         else:
             return self.config.final_epsilon
 
