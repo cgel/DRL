@@ -82,7 +82,7 @@ def test_run(n):
     score_list = []
     for episode in range(n):
         x, r, done, score = env.reset(), 0, False, 0
-        while done:
+        while not done:
             action = agent.step(x, r)
             x, r, done, info = env.step(action)
             score += r
@@ -91,59 +91,63 @@ def test_run(n):
     agent.testing(False)
     return score_list
 
-# Start the training
-for episode in range(config.num_episodes):
-    x, r, done, score = env.reset(), 0, False, 0
-    ep_begin_t = time.time()
-    while not done:
-        action = agent.step(x, r)
-        x, r, done, info = env.step(action)
-        score += r
-    agent.done()
-    ep_duration = time.time() - ep_begin_t
-    # online Summary
-    last_episode = config.num_episodes == episode
-    if config.logging and episode % config.log_online_summary_rate == 0 or last_episode:
-        episode_online_summary = tf.Summary(
-            value=[
-                tf.Summary.Value(
-                    tag="online/epsilon",
-                    simple_value=agent.epsilon()),
-                tf.Summary.Value(
-                    tag="online/score",
-                    simple_value=score),
-                tf.Summary.Value(
-                    tag="online/global_step",
-                    simple_value=agent.step_count),
-                tf.Summary.Value(
-                    tag="online/ep_duration_seconds",
-                    simple_value=ep_duration)])
-        summary_writter.add_summary(episode_online_summary, episode)
-    # log percent
-    if config.logging and episode % config.log_percent_rate == 0 and episode != 0 or last_episode:
-        percent = float(episode) / config.num_episodes * 100
-        print("%i%% -- epsilon:%.2f" % (percent, agent.epsilon()))
-    # save
-    if config.logging and episode % config.save_rate == 0 and episode != 0 or last_episode:
-        print("saving checkpoint at episode " + str(episode))
-        saver.save(sess, checkpoint_path + "run-" +
-                   run_name + "_episode", episode)
-    # performance summary
-    if config.logging and episode % config.log_perf_summary_rate == 0 or last_episode:
-        score_list = test_run(n=config.test_run_num)
-        performance_summary = tf.Summary(
-            value=[
-                tf.Summary.Value(
-                    tag="test_score/average",
-                    simple_value=sum(score_list) /
-                    len(score_list)),
-                tf.Summary.Value(
-                    tag="test_score/max",
-                    simple_value=max(score_list)),
-                tf.Summary.Value(
-                    tag="test_score/min",
-                    simple_value=min(score_list)),
-            ])
-        summary_writter.add_summary(performance_summary, agent.step_count)
+def train():
+    for episode in range(config.num_episodes):
+        x, r, done, score = env.reset(), 0, False, 0
+        ep_begin_t = time.time()
+        while not done:
+            action = agent.step(x, r)
+            x, r, done, info = env.step(action)
+            score += r
+        agent.done()
+        ep_duration = time.time() - ep_begin_t
+        # online Summary
+        if not config.logging:
+            continue
+        is_final_episode = config.num_episodes == episode
+        if episode % config.log_online_summary_rate == 0 or is_final_episode:
+            episode_online_summary = tf.Summary(
+                value=[
+                    tf.Summary.Value(
+                        tag="online/epsilon",
+                        simple_value=agent.epsilon()),
+                    tf.Summary.Value(
+                        tag="online/score",
+                        simple_value=score),
+                    tf.Summary.Value(
+                        tag="online/global_step",
+                        simple_value=agent.step_count),
+                    tf.Summary.Value(
+                        tag="online/ep_duration_seconds",
+                        simple_value=ep_duration)])
+            summary_writter.add_summary(episode_online_summary, episode)
+        # log percent
+        if episode % config.log_percent_rate == 0 and episode != 0 or is_final_episode:
+            percent = float(episode) / config.num_episodes * 100
+            print("%i%% -- epsilon:%.2f" % (percent, agent.epsilon()))
+        # save
+        if episode % config.save_rate == 0 and episode != 0 or is_final_episode:
+            print("saving checkpoint at episode " + str(episode))
+            saver.save(sess, checkpoint_path + "run-" +
+                       run_name + "_episode", episode)
+        # performance summary
+        if episode % config.log_perf_summary_rate == 0 or is_final_episode:
+            score_list = test_run(n=config.test_run_num)
+            performance_summary = tf.Summary(
+                value=[
+                    tf.Summary.Value(
+                        tag="test_score/average",
+                        simple_value=sum(score_list) /
+                        len(score_list)),
+                    tf.Summary.Value(
+                        tag="test_score/max",
+                        simple_value=max(score_list)),
+                    tf.Summary.Value(
+                        tag="test_score/min",
+                        simple_value=min(score_list)),
+                ])
+            summary_writter.add_summary(performance_summary, agent.step_count)
+
+train()
 
 # Write summary about the run.
