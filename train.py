@@ -11,7 +11,6 @@ parser.add_argument("-replay_memory_capacity", type=int, default=1000000)
 parser.add_argument("-steps_before_training", type=int, default=12500)
 parser.add_argument("-exploration_steps", type=int, default=250000)
 parser.add_argument("-sync_rate", type=int, default=2500)
-parser.add_argument("-save_summary_rate", type=int, default=10000)
 parser.add_argument("-device", default="0")
 parser.add_argument("-gamma", type=float, default=0.99)
 parser.add_argument("-learning_rate", type=float, default=0.00025)
@@ -22,9 +21,10 @@ parser.add_argument("-load_checkpoint", default="")
 parser.add_argument("-logging", default="")
 parser.add_argument("-transition_function", default="oh_concat")
 parser.add_argument("-alpha", type=float, default=0.1)
+parser.add_argument("-update_summary_rate", type=int, default=50000)
 config = parser.parse_args()
 config.num_episodes = 50000
-config.log_online_summary_rate = 50
+config.log_online_summary_rate = 500
 config.log_perf_summary_rate = 1000
 config.save_rate = 1000
 config.log_percent_rate = 1000

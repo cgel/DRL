@@ -95,7 +95,7 @@ class Agent:
             if self.enqueue_from_RM_thread.isAlive() == False:
                 self.enqueue_from_RM_thread.start()
 
-            if self.config.logging and self.step_count % self.config.save_summary_rate == 0:
+            if self.config.logging and self.step_count % self.config.update_summary_rate == 0:
                 _, Q_summary_str = self.sess.run(
                     [self.train_op, self.Q_summary_op], options=self.timeout_option)
                 self.summary_writter.add_summary(
@@ -109,7 +109,7 @@ class Agent:
         print("Starting enqueue thread")
         while not self.stop_enqueuing.isSet():
             state_batch, action_batch, reward_batch, next_state_batch, terminal_batch, _ = self.RM.sample_transition_batch()
-            if self.config.logging and self.step_count % self.config.save_summary_rate == 0:
+            if self.config.logging and self.step_count % self.config.update_summary_rate == 0:
                 QT_np, QT_summary_str = self.sess.run([self.QT, self.QT_summary_op], feed_dict={
                     self.stateT_ph: next_state_batch}, options=self.timeout_option)
                 self.summary_writter.add_summary(
