@@ -23,22 +23,31 @@ class Agent:
             self.state_ph = tf.placeholder(
                 tf.float32, [None, 84, 84, 4], name="state_ph")
             self.action_ph = tf.placeholder(tf.int64, [None], name="Action_ph")
-            self.Y_ph = tf.placeholder(tf.float32, [None], name="Y_ph")
-            placeholder_list = [self.state_ph, self.action_ph, self.Y_ph]
+            self.QT_ph = tf.placeholder(tf.float32, [None], name="QT_ph")
+            self.predicted_QT_ph = tf.placeholder(tf.float32, [None, config.action_num], name="predicte_QT_ph")
+            self.rT_ph = tf.placeholder(tf.float32, [None], name="r_ph")
+            placeholder_list = [self.state_ph, self.action_ph, self.QT_ph, self.predicted_QT_ph, self.rT_ph]
             q = tf.FIFOQueue(2, [ph.dtype for ph in placeholder_list])
             self.enqueue_op = q.enqueue(placeholder_list)
-            self.state, self.action, self.Y = q.dequeue()
-            self.state.set_shape(self.state_ph.get_shape())
+            self.state_queue, self.action_queue, self.QT_queue, self.predicted_QT_queue, self.rT_queue = q.dequeue()
+            self.state_queue.set_shape(self.state_ph.get_shape())
+            self.action_queue.set_shape(self.action_ph.get_shape())
             self.stateT_ph = tf.placeholder(
                 tf.float32, [None, 84, 84, 4], name="stateT_ph")
             # Define all the ops
             with tf.variable_scope("Q"):
-                self.Q = commonOps.deepmind_Q(self.state, config, "Normal")
+                self.h_state = commonOps.state_to_hidden(self.state_queue, config, "Normal")
+                self.Q = commonOps.hidden_to_Q(self.h_state, config, "Normal")
+                self.r = commonOps.hidden_to_r(self.h_state, config, "Normal")
+                self.predicted_h_state = commonOps.hidden_to_hidden(self.h_state, self.action_queue, config, "Normal")
+                tf.get_variable_scope().reuse_variables()
+                self.predicted_Q = commonOps.hidden_to_Q(self.predicted_h_state, config, "Normal")
             with tf.variable_scope("QT"):
                 self.QT = commonOps.deepmind_Q(
                     self.stateT_ph, config, "Target")
-            self.train_op = commonOps.dqn_train_op(
-                self.Q, self.Y, self.action, config, "Normal")
+            self.train_op = commonOps.pdqn_train_op(self.Q, self.QT_queue, self.r,
+                                self.rT_queue, self.predicted_Q,
+                                self.predicted_QT_queue, self.action_queue, config, "Normal")
             self.sync_QT_op = []
             for W_pair in zip(
                     tf.get_collection("Target_weights"),
@@ -129,7 +138,9 @@ class Agent:
             feed_dict = {
                 self.state_ph: state_batch,
                 self.action_ph: action_batch,
-                self.Y_ph: Y}
+                self.QT_ph: Y,
+                self.predicted_QT_ph: QT_np,
+                self.rT_ph: reward_batch}
             self.sess.run(self.enqueue_op, feed_dict=feed_dict)
         print("Closing enqueue thread")
 
@@ -137,10 +148,11 @@ class Agent:
         if np.random.uniform() < epsilon:
             action = random.randint(0, self.config.action_num - 1)
         else:
+            # instead of dequeuing feed the game state
             action = np.argmax(
                 self.sess.run(
                     self.Q, feed_dict={
-                        self.state: self.game_state})[0])
+                        self.state_queue: self.game_state})[0])
         return action
 
     def testing(self, t=True):

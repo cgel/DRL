@@ -1,6 +1,10 @@
 import tensorflow as tf
 import numpy as np
 
+relu_layer_counter = [0]
+conv_layer_counter = [0]
+linear_layer_counter = [0]
+conditional_linear_layer_counter = [0]
 
 def deepmind_Q(input_state, config, Collection=None):
     normalized = input_state / 256.
@@ -20,23 +24,70 @@ def deepmind_Q(input_state, config, Collection=None):
 
     head = add_relu_layer(head, size=512, Collection=Collection)
     # the last layer is linear without a relu
-    head_size = head.get_shape().as_list()[1]
-
-    Q_w = get_var("Q_W", [head_size, config.action_num], initializer=tf.truncated_normal_initializer(
-        stddev=xavier_std(head_size, config.action_num)), Collection=Collection)
-
-    Q = tf.matmul(head, Q_w, name="Q")
+    Q = add_linear_layer(head, config.action_num, Collection, layer_name="Q")
     tf.histogram_summary("Q", Q, collections=Collection + "_summaries")
 
     # DQN summary
     for i in range(config.action_num):
-        dqni = tf.scalar_summary("DQN/action" + str(i),
+        tf.scalar_summary("DQN/action" + str(i),
                                  Q[0, i], collections=["Q_summaries"])
-
     return Q
 
 
-def build_train_op(Q, Y, action, config, Collection):
+def state_to_hidden(input_state, config, Collection=None):
+    normalized = input_state / 256.
+    tf.add_to_collection(Collection + "_summaries", tf.histogram_summary(
+        "normalized_input", normalized))
+
+    head = add_conv_layer(normalized, channels=32,
+                          kernel_size=8, stride=4, Collection=Collection)
+    head = add_conv_layer(head, channels=64,
+                          kernel_size=4, stride=2, Collection=Collection)
+    head = add_conv_layer(head, channels=64,
+                          kernel_size=3, stride=1, Collection=Collection)
+
+    head_shape = head.get_shape().as_list()
+    head = tf.reshape(
+        head, [-1, head_shape[1] * head_shape[2] * head_shape[3]], name=head.op.name + "_flat")
+    return head
+
+# will be called twice under the same var scope
+def hidden_to_Q(hidden_state, config, Collection):
+    suffix = ""
+    if tf.get_variable_scope().reuse:
+        suffix = "_prediction"
+    head = add_relu_layer(hidden_state, size=512, Collection=Collection,
+                          layer_name="final_relu_layer" + suffix, weight_name="final_linear_Q_W")
+    # the last layer is linear without a relu
+    Q = add_linear_layer(head, config.action_num, Collection, layer_name="Q"+suffix, weight_name="Q_W")
+    tf.add_to_collection(Collection + "_summaries",
+                         tf.histogram_summary("Q"+suffix, Q))
+    return Q
+
+
+def hidden_to_r(hidden_state, config, Collection):
+    head = add_relu_layer(hidden_state, size=256, layer_name="r_relu1", Collection=Collection)
+    # the last layer is linear without a relu
+    r = add_linear_layer(head, config.action_num, Collection, layer_name="r_linear2", weight_name="r_W")
+    tf.add_to_collection(Collection + "_summaries",
+                         tf.histogram_summary("r", r))
+    return r
+
+
+def hidden_to_hidden(hidden_state, action, config, Collection):
+    hidden_state_shape = hidden_state.get_shape().as_list()
+    action_one_hot = tf.one_hot(
+        action, config.action_num, 1., 0., name='action_one_hot')
+    head = tf.concat(
+        1, [action_one_hot, hidden_state], name="one_hot_concat_state")
+    head = add_relu_layer(
+        head, size=256, layer_name="prediction_relu1", Collection=Collection)
+    head = add_relu_layer(
+        head, size=hidden_state_shape[1], layer_name="prediction_hidden", Collection=Collection)
+    return head
+
+# -- Training ops --
+def dqn_train_op(Q, Y, action, config, Collection):
     with tf.name_scope("loss"):
         # could be done more efficiently with gather_nd or transpose + gather
         action_one_hot = tf.one_hot(
@@ -64,6 +115,100 @@ def build_train_op(Q, Y, action, config, Collection):
     return train_op
 
 
+def pdqn_train_op(Q, QT, r, rT, predicted_Q, predicted_QT, action, config, Collection):
+    with tf.name_scope("loss"):
+        # could be done more efficiently with gather_nd or transpose + gather
+        action_one_hot = tf.one_hot(
+            action, config.action_num, 1., 0., name='action_one_hot')
+        Q_action = tf.reduce_sum(
+            Q * action_one_hot, reduction_indices=1, name='DQN_acted')
+        r_action = tf.reduce_sum(
+            r * action_one_hot, reduction_indices=1, name='DQN_acted')
+
+        Q_loss = tf.reduce_sum(
+            clipped_l2(QT, Q_action), name="Q_loss")
+        # note that the target is defined over all actions
+        prediction_loss = config.alpha / config.action_num * tf.reduce_sum(clipped_l2(
+            predicted_Q, predicted_QT, grad_clip=config.alpha), name="future_loss")
+        r_loss = config.alpha * tf.reduce_sum(
+            clipped_l2(r_action, rT), name="R_loss")
+
+        # maybe add the linear factor 2(DQNR-real_R)(predicted_next_Q-next_Y)
+        combined_loss = Q_loss + prediction_loss + r_loss
+
+        tf.scalar_summary(
+            "losses/Q", Q_loss, collections=[Collection + "_summaries"])
+        tf.scalar_summary(
+            "losses/predicted", prediction_loss, collections=[Collection + "_summaries"])
+        tf.scalar_summary(
+            "losses/r", r_loss, collections=[Collection + "_summaries"])
+        tf.scalar_summary(
+            "losses/combined", combined_loss, collections=[Collection + "_summaries"])
+
+        tf.scalar_summary(
+            "main/QT_0", QT[0], collections=[Collection + "_summaries"])
+        tf.scalar_summary(
+            "main/Q_0", Q_action[0], collections=[Collection + "_summaries"])
+        tf.scalar_summary(
+            "main/max_predicted_Q_0", tf.reduce_max(predicted_Q, 1)[0], collections=[Collection + "_summaries"])
+        tf.scalar_summary(
+            "main/predicted_QT_0", tf.reduce_max(predicted_QT, 1)[0], collections=[Collection + "_summaries"])
+
+        tf.scalar_summary(
+            "main/r_0", r_action[0], collections=[Collection + "_summaries"])
+        tf.scalar_summary(
+            "main/rT_0", rT[0], collections=[Collection + "_summaries"])
+
+    train_op, grads = build_rmsprop_optimizer(
+        combined_loss, config.learning_rate, 0.95, 0.01, 1, "graves_rmsprop")
+
+    for grad, var in grads:
+        if grad is not None:
+            tf.histogram_summary(var.op.name + '/gradients', grad, name=var.op.name +
+                                 '/gradients', collections=[Collection + "_summaries"])
+    return train_op
+
+# -- Transition function ops --
+def hidden_to_hidden_concat(hidden_state, action, action_num, Collection):
+    hidden_state_shape = hidden_state.get_shape().as_list()
+    action_one_hot = tf.one_hot(
+        action, action_num, 1., 0., name='action_one_hot')
+    head = tf.concat(
+        1, [action_one_hot, hidden_state], name="one_hot_concat_state")
+    head = add_relu_layer(
+        head, size=256, layer_name="prediction_linear1", Collection=Collection)
+    head = add_relu_layer(
+        head, size=hidden_state_shape[1], layer_name="prediction_linear2", Collection=Collection)
+    return head
+
+
+def hidden_to_hidden_expanded_concat(hidden_state, action, action_num, Collection):
+    hidden_state_shape = hidden_state.get_shape().as_list()
+
+    w = get_var("action_embeddings_W", [action_num, 256], initializer=tf.truncated_normal_initializer(
+        stddev=0.1), Collection=Collection)
+    action_embedding = tf.gather(w, action)
+
+    head = tf.concat(
+        1, [action_embedding, hidden_state], name="hidden-action_embedding")
+    head = add_relu_layer(
+        head, size=256, layer_name="prediction_linear1", Collection=Collection)
+    head = add_relu_layer(
+        head, size=hidden_state_shape[1], layer_name="prediction_linear2", Collection=Collection)
+    return head
+
+
+def hidden_to_hidden_conditional(hidden_state, action, action_num, Collection):
+    hidden_state_shape = hidden_state.get_shape().as_list()
+
+    head = add_conditional_relu_layer(
+        hidden_state, action, action_num, size=256, Collection=Collection)
+    head = add_relu_layer(
+        head, size=hidden_state_shape[1], Collection=Collection)
+    return head
+
+
+# -- Primitive ops --
 def build_activation_summary(x, Collection):
     tensor_name = x.op.name
     hs = tf.histogram_summary(tensor_name + '/activations', x)
@@ -141,13 +286,8 @@ def add_relu_layer(head, size, Collection, layer_name=None, weight_name=None):
     build_activation_summary(new_head, Collection + "_summaries")
     return new_head
 
-relu_layer_counter = [0]
-conv_layer_counter = [0]
-linear_layer_counter = [0]
-conditional_linear_layer_counter = [0]
 
-
-def add_conditional_relu_layer_no_gather(head, condition, condition_size, size, Collection, layer_name=None, weight_name=None):
+def add_conditional_relu_layer(head, condition, condition_size, size, Collection, layer_name=None, weight_name=None):
     assert len(head.get_shape()
                ) == 2, "can't add a linear layer to this input"
     if layer_name == None:
@@ -181,83 +321,6 @@ def add_conditional_relu_layer_no_gather(head, condition, condition_size, size, 
     return new_head
 
 
-# for the multiple calls to share variable, all variable names must be the
-# same evey call
-def hidden_state_to_Q(hidden_state, _name, action_num, Collection):
-    head = add_relu_layer(hidden_state, size=512, Collection=Collection,
-                          layer_name="final_linear_" + _name, weight_name="final_linear_Q_W")
-    # the last layer is linear without a relu
-    head_size = head.get_shape().as_list()[1]
-
-    Q_w = get_var("Q_W", [head_size, action_num], initializer=tf.truncated_normal_initializer(
-        stddev=xavier_std(head_size, action_num)), Collection=Collection)
-
-    Q = tf.matmul(head, Q_w, name=_name)
-    tf.add_to_collection(Collection + "_summaries",
-                         tf.histogram_summary(_name, Q))
-    return Q
-
-
-# for the multiple calls to share variable, all variable names must be the
-# same evey call
-def hidden_state_to_R(hidden_state, _name, action_num, Collection):
-    head = add_relu_layer(hidden_state, size=256, Collection=Collection,
-                          layer_name="linear1_" + _name, weight_name="linear_R_W")
-    # the last layer is linear without a relu
-    head_size = head.get_shape().as_list()[1]
-
-    R_w = get_var("R_W", [head_size, action_num], initializer=tf.truncated_normal_initializer(
-        stddev=xavier_std(head_size, action_num)), Collection=Collection)
-
-    R = tf.matmul(head, R_w, name=_name)
-    tf.add_to_collection(Collection + "_summaries",
-                         tf.histogram_summary(_name, R))
-    return R
-
-
-def hidden_to_hidden_concat(hidden_state, action, action_num, Collection):
-    hidden_state_shape = hidden_state.get_shape().as_list()
-    action_one_hot = tf.one_hot(
-        action, action_num, 1., 0., name='action_one_hot')
-    head = tf.concat(
-        1, [action_one_hot, hidden_state], name="one_hot_concat_state")
-    head = add_relu_layer(
-        head, size=256, layer_name="prediction_linear1", Collection=Collection)
-    head = add_relu_layer(
-        head, size=hidden_state_shape[1], layer_name="prediction_linear2", Collection=Collection)
-    return head
-
-
-def hidden_to_hidden_expanded_concat(hidden_state, action, action_num, Collection):
-    hidden_state_shape = hidden_state.get_shape().as_list()
-
-    w = get_var("action_embeddings_W", [action_num, 256], initializer=tf.truncated_normal_initializer(
-        stddev=0.1), Collection=Collection)
-    action_embedding = tf.gather(w, action)
-
-    head = tf.concat(
-        1, [action_embedding, hidden_state], name="hidden-action_embedding")
-    head = add_relu_layer(
-        head, size=256, layer_name="prediction_linear1", Collection=Collection)
-    head = add_relu_layer(
-        head, size=hidden_state_shape[1], layer_name="prediction_linear2", Collection=Collection)
-    return head
-
-
-def hidden_to_hidden_conditional(hidden_state, action, action_num, Collection):
-    hidden_state_shape = hidden_state.get_shape().as_list()
-
-    head = add_conditional_relu_layer(
-        hidden_state, action, action_num, size=256, Collection=Collection)
-    head = add_relu_layer(
-        head, size=hidden_state_shape[1], Collection=Collection)
-    return head
-
-
-def add_conditional_relu_layer(
-    *args, **kwargs): return add_conditional_relu_layer_no_gather(*args, **kwargs)
-
-
 def clipped_l2(y, y_t, grad_clip=1):
     with tf.name_scope("clipped_l2"):
         batch_delta = y - y_t
@@ -267,53 +330,6 @@ def clipped_l2(y, y_t, grad_clip=1):
             batch_delta_abs - batch_delta_quadratic) * grad_clip
         batch = batch_delta_linear + batch_delta_quadratic**2 / 2
     return batch
-
-
-def build_train_op_prediction(Q, Y, DQNR, real_R, predicted_next_Q, next_Y, action, config):
-    action_num = config.action_num
-    with tf.name_scope("loss"):
-        # could be done more efficiently with gather_nd or transpose + gather
-        action_one_hot = tf.one_hot(
-            action, action_num, 1., 0., name='action_one_hot')
-        DQN_acted = tf.reduce_sum(
-            Q * action_one_hot, reduction_indices=1, name='DQN_acted')
-        DQNR_acted = tf.reduce_sum(
-            DQNR * action_one_hot, reduction_indices=1, name='DQN_acted')
-
-        Q_loss = tf.reduce_sum(
-            clipped_l2(Y, DQN_acted), name="Q_loss")
-        future_loss = config.alpha / action_num * tf.reduce_sum(clipped_l2(
-            predicted_next_Q, next_Y, grad_clip=config.alpha), name="future_loss")
-        R_loss = config.alpha * tf.reduce_sum(
-            clipped_l2(DQNR_acted, real_R), name="R_loss")
-
-        # maybe add the linear factor 2(DQNR-real_R)(predicted_next_Q-next_Y)
-        combined_loss = Q_loss + future_loss + R_loss
-
-        max_predicted_next_Q_0 = tf.reduce_max(predicted_next_Q, 1)[0]
-        next_max_Y = tf.reduce_max(next_Y, 1)
-
-        tf.scalar_summary("losses/Q", Q_loss, collections="Q_summaries")
-        tf.scalar_summary("losses/Q", Q_loss, collections="Q_summaries")
-        tf.scalar_summary("losses/next_Q", future_loss,
-                          collections="Q_summaries")
-        tf.scalar_summary("losses/R", R_loss, collections="Q_summaries")
-        tf.scalar_summary("losses/combined", combined_loss,
-                          collections="Q_summaries")
-        tf.scalar_summary("main/Y_0", Y[0], collections="Q_summaries")
-        tf.scalar_summary(
-            "main/acted_Q_0", DQN_acted[0], collections="Q_summaries")
-        tf.scalar_summary("main/acted_Q_prediction_0", DQNR_acted[
-                          0] + config.gamma * max_predicted_next_Q_0, collections="Q_summaries")
-        tf.scalar_summary("main/max_predicted_next_Q_0",
-                          max_predicted_next_Q_0, collections="Q_summaries")
-        tf.scalar_summary("main/next_max_Y_0",
-                          next_max_Y[0], collections="Q_summaries")
-        tf.scalar_summary("main/R_0", DQNR_acted[0], collections="Q_summaries")
-        tf.scalar_summary("main/R_real_0", real_R[0], collections="Q_summaries")
-
-    train_op, grads = build_rmsprop_optimizer(
-        combined_loss, config.learning_rate, 0.95, 0.01, 1, "graves_rmsprop")
 
 
 def build_rmsprop_optimizer(loss, learning_rate, rmsprop_decay, rmsprop_constant, gradient_clip, version):

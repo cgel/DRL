@@ -18,6 +18,7 @@ parser.add_argument("-initial_epsilon", type=float, default=1.)
 parser.add_argument("-final_epsilon", type=float, default=0.1)
 parser.add_argument("-buff_size", type=float, default=4)
 parser.add_argument("-load_checkpoint", default="")
+parser.add_argument("-agent", default="dqn")
 parser.add_argument("-logging", default="")
 parser.add_argument("-transition_function", default="oh_concat")
 parser.add_argument("-alpha", type=float, default=0.1)
@@ -31,15 +32,21 @@ config.log_percent_rate = 1000
 config.test_run_num = 20
 config.logging = config.logging not in ["0", "false", "False"]
 config.device = "/gpu:"+config.device
+print("Using agent "+config.agent)
+if config.agent == "dqn":
+    from agents.deepmind_dqn import Agent
+elif config.agent == "pdqn":
+    from agents.PDQN import Agent
+else:
+    raise Exception(config.agent +" is not a valid agent")
+
 print("Logging: " + str(config.logging))
 if config.transition_function not in [
         "oh_concat", "expanded_concat", "conditional"]:
-    raise Exception("Not valid transition function")
+    raise Exception(config.transition_function+" is not valid transition function")
 tf.logging.set_verbosity(tf.logging.ERROR)
 
 # from the selected agent import agent
-from agents.deepmind_dqn import Agent
-
 env = gym.make('Breakout-v0')
 config.action_num = env.action_space.n
 
