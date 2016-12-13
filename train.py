@@ -25,7 +25,7 @@ parser.add_argument("-alpha", type=float, default=0.1)
 parser.add_argument("-update_summary_rate", type=int, default=50000)
 config = parser.parse_args()
 config.num_episodes = 50000
-config.log_online_summary_rate = 500
+config.log_online_summary_rate = 250
 config.log_perf_summary_rate = 1000
 config.save_rate = 1000
 config.log_percent_rate = 1000
@@ -47,14 +47,45 @@ if config.transition_function not in [
 tf.logging.set_verbosity(tf.logging.ERROR)
 
 # from the selected agent import agent
-env = gym.make('Breakout-v0')
-config.action_num = env.action_space.n
+#env = gym.make('Breakout-v0')
+#config.action_num = env.action_space.n
+
+from ale_python_interface import ALEInterface
+import numpy as np
+class Env:
+    def __init__(self):
+        self.ale = ALEInterface()
+        rom_name = "roms/Breakout.bin"
+        self.ale.setInt("frame_skip", 4)
+        self.ale.loadROM(rom_name)
+        legal_actions = self.ale.getMinimalActionSet()
+        self.action_map = {}
+        for i in range(len(legal_actions)):
+            self.action_map[i] = legal_actions[i]
+        self.action_num = len(self.action_map)
+
+    def reset(self):
+        state = np.zeros((84, 84, 3), dtype=np.uint8)
+        self.ale.reset_game()
+        return state
+
+    def step(self, action):
+        #state = self.ale.getScreenGrayscale()
+        state = self.ale.getScreenRGB()
+        reward = self.ale.act(self.action_map[action])
+        done = self.ale.game_over()
+        return state, reward, done, ""
+
+env = Env()
+config.action_num = env.action_num
 
 sess_config = tf.ConfigProto()
 sess_config.allow_soft_placement = True
 sess_config.gpu_options.allow_growth = True
 sess_config.log_device_placement = False
 sess = tf.Session(config=sess_config)
+
+agent = Agent(config, sess)
 
 if config.logging:
     int_folders = []
@@ -78,7 +109,7 @@ else:
     #Not defined
     summary_writter = 0
 
-agent = Agent(config, sess, summary_writter)
+agent.set_summary_writer(summary_writter)
 
 saver = tf.train.Saver(max_to_keep=20)
 if config.load_checkpoint != "":
