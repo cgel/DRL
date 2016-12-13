@@ -9,15 +9,14 @@ import commonOps
 
 class Agent:
 
-    def __init__(self, config, session, summary_writter):
+    def __init__(self, config, session):
         # build the net
         self.config = config
         self.sess = session
         self.RM = ReplayMemory(config)
-        self.summary_writter = summary_writter
         self.step_count = 0
         self.episode = 0
-        self.training = True
+        self.isTesting = False
         with tf.device(config.device):
             # Create all variables and the FIFOQueue
             self.state_ph = tf.placeholder(
@@ -58,7 +57,7 @@ class Agent:
         self.timeout_option = tf.RunOptions(timeout_in_ms=5000)
 
     def step(self, x, r):
-        if self.training:
+        if not self.isTesting:
             if not self.episode_begining:
                 self.RM.add(
                     self.game_state[
@@ -77,7 +76,7 @@ class Agent:
     # Add the transition to RM and reset the internal state for the next
     # episode
     def done(self):
-        if self.training:
+        if not self.isTesting:
             self.RM.add(
                 self.game_state[:, :, :, -1],
                 self.game_action, self.game_reward, True)
@@ -121,7 +120,6 @@ class Agent:
                         self.stateT_ph: next_state_batch},
                     options=self.timeout_option)
 
-            # simplify with np
             QT_max_action = np.max(QT_np, 1)
             Y = reward_batch + self.config.gamma * \
                 QT_max_action * (1 - terminal_batch)
@@ -144,7 +142,7 @@ class Agent:
         return action
 
     def testing(self, t=True):
-        self.training = not t
+        self.isTesting = t
 
     def reset_game(self):
         self.episode_begining = True
@@ -158,6 +156,9 @@ class Agent:
                  self.config.exploration_steps) * self.step_count
         else:
             return self.config.final_epsilon
+
+    def set_summary_writer(self, summary_writter):
+        self.summary_writter = summary_writter
 
     def __del__(self):
         self.stop_enqueuing.set()
