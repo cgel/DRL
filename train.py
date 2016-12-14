@@ -90,9 +90,9 @@ agent = Agent(config, sess)
 if config.logging:
     int_folders = []
     for folder in os.listdir("log"):
-        if not set(folder) - set(string.digits):
+        if not set(folder[0]) - set(string.digits):
             int_folders.append(int(folder))
-    run_name = str(max(int_folders + [0]) + 1)
+    run_name = str(max(int_folders + [0]) + 1)+"-"+config.agent
     log_path = "log/" + run_name + "/"
     checkpoint_path = log_path + "checkpoint/"
     print("Starting run: " + str(run_name))
@@ -175,21 +175,23 @@ def train():
                        run_name + "_episode", episode)
         # performance summary
         if episode % config.log_perf_summary_rate == 0 or is_final_episode:
-            score_list = test_run(n=config.test_run_num)
-            performance_summary = tf.Summary(
-                value=[
-                    tf.Summary.Value(
-                        tag="test_score/average",
-                        simple_value=sum(score_list) /
-                        len(score_list)),
-                    tf.Summary.Value(
-                        tag="test_score/max",
-                        simple_value=max(score_list)),
-                    tf.Summary.Value(
-                        tag="test_score/min",
-                        simple_value=min(score_list)),
-                ])
+            for action_mode in agent.action_modes:
+                agent.set_action_mode(action_mode)
+                score_list = test_run(n=config.test_run_num)
+                performance_summary = tf.Summary(
+                    value=[
+                        tf.Summary.Value(
+                            tag="test_score/"+action_mode+"_average",
+                            simple_value=sum(score_list)/len(score_list)),
+                        tf.Summary.Value(
+                            tag="test_score/"+action_mode+"_max",
+                            simple_value=max(score_list)),
+                        tf.Summary.Value(
+                            tag="test_score/"+action_mode+"_min",
+                            simple_value=min(score_list)),
+                    ])
             summary_writter.add_summary(performance_summary, agent.step_count)
+            agent.set_action_mode(agent.default_action_mode)
 
 train()
 

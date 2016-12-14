@@ -5,19 +5,16 @@ import random
 import threading
 from replayMemory import ReplayMemory
 import commonOps
+from base_agent import BaseAgent
 
+class Agent(BaseAgent):
 
-class Agent:
-
-    def __init__(self, config, session, summary_writter):
+    def __init__(self, config, session):
+        BaseAgent.__init__(self, config, session)
         # build the net
-        self.config = config
-        self.sess = session
-        self.RM = ReplayMemory(config)
-        self.summary_writter = summary_writter
-        self.step_count = 0
-        self.episode = 0
-        self.training = True
+        self.action_modes = {"e_greedy":self.e_greedy_action, "pan_e_greedy":self.plan_e_greedy_action}
+        self.default_action_mode = "e_greedy"
+        self.action_mode = self.default_action_mode
         with tf.device(config.device):
             # Create all variables and the FIFOQueue
             self.state_ph = tf.placeholder(
@@ -38,15 +35,15 @@ class Agent:
             with tf.variable_scope("Q"):
                 self.h_state = commonOps.state_to_hidden(self.state_queue, config, "Normal")
                 self.Q = commonOps.hidden_to_Q(self.h_state, config, "Normal")
-                self.r = commonOps.hidden_to_r(self.h_state, config, "Normal")
+                self.predicted_r = commonOps.hidden_to_r(self.h_state, config, "Normal")
                 self.predicted_h_state = commonOps.hidden_to_hidden(self.h_state, self.action_queue, config, "Normal")
                 tf.get_variable_scope().reuse_variables()
-                self.predicted_Q = commonOps.hidden_to_Q(self.predicted_h_state, config, "Normal")
+                self.predicted_next_Q = commonOps.hidden_to_Q(self.predicted_h_state, config, "Normal")
             with tf.variable_scope("QT"):
                 self.QT = commonOps.deepmind_Q(
                     self.stateT_ph, config, "Target")
-            self.train_op = commonOps.pdqn_train_op(self.Q, self.QT_queue, self.r,
-                                self.rT_queue, self.predicted_Q,
+            self.train_op = commonOps.pdqn_train_op(self.Q, self.QT_queue, self.predicted_r,
+                                self.rT_queue, self.predicted_next_Q,
                                 self.predicted_QT_queue, self.action_queue, config, "Normal")
             self.sync_QT_op = []
             for W_pair in zip(
@@ -59,45 +56,10 @@ class Agent:
             self.QT_summary_op = tf.merge_summary(
                 tf.get_collection("Target_summaries"))
 
-        self.reset_game()
         self.enqueue_from_RM_thread = threading.Thread(
             target=self.enqueue_from_RM)
         self.enqueue_from_RM_thread.daemon = True
         self.stop_enqueuing = threading.Event()
-        self.timeout_option = tf.RunOptions(timeout_in_ms=5000)
-
-    def step(self, x, r):
-        if self.training:
-            if not self.episode_begining:
-                self.RM.add(
-                    self.game_state[
-                        :, :, :, -1], self.game_action, self.game_reward, False)
-            else:
-                self.episode_begining = False
-            self.game_action = self.e_greedy_action(self.epsilon())
-            self.observe(x, r)
-            self.update()
-            self.step_count += 1
-        else:
-            self.game_action = self.e_greedy_action(0.01)
-            self.observe(x, r)
-        return self.game_action
-
-    # Add the transition to RM and reset the internal state for the next
-    # episode
-    def done(self):
-        if self.training:
-            self.RM.add(
-                self.game_state[:, :, :, -1],
-                self.game_action, self.game_reward, True)
-        self.reset_game()
-
-    def observe(self, x, r):
-        self.game_reward = r
-        x_ = cv2.resize(x, (84, 84))
-        x_ = cv2.cvtColor(x_, cv2.COLOR_RGB2GRAY)
-        self.game_state = np.roll(self.game_state, -1, axis=3)
-        self.game_state[0, :, :, -1] = x_
 
     def update(self):
         if self.step_count > self.config.steps_before_training:
@@ -155,21 +117,21 @@ class Agent:
                         self.state_queue: self.game_state})[0])
         return action
 
-    def testing(self, t=True):
-        self.training = not t
-
-    def reset_game(self):
-        self.episode_begining = True
-        self.game_state = np.zeros(
-            (1, 84, 84, self.config.buff_size), dtype=np.uint8)
-
-    def epsilon(self):
-        if self.step_count < self.config.exploration_steps:
-            return self.config.initial_epsilon - \
-                ((self.config.initial_epsilon - self.config.final_epsilon) /
-                 self.config.exploration_steps) * self.step_count
+    def plan_e_greedy_action(self, epsilon):
+        if np.random.uniform() < epsilon:
+            action = random.randint(0, self.config.action_num - 1)
         else:
-            return self.config.final_epsilon
+            #should be optimized
+            # instead of dequeuing feed the game state
+            feed_dict={self.state_queue:self.game_state, self.action_queue:[0]}
+            predicted_Rs, predicted_next_Q_0 = self.sess.run([self.predicted_r, self.predicted_next_Q], feed_dict)
+            predicted_next_Qs = np.zeros(self.config.action_num)
+            predicted_next_Qs[0] = np.max(predicted_next_Q_0)
+            for a in range(1, self.config.action_num):
+                feed_dict={self.state_queue:self.game_state, self.action_queue:[a]}
+                predicted_next_Qs[a] == np.max(self.sess.run(self.predicted_next_Q, feed_dict))
+            action = np.argmax(predicted_Rs + self.config.gamma * predicted_next_Qs)
+        return action
 
     def __del__(self):
         self.stop_enqueuing.set()
