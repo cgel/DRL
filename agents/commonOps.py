@@ -19,12 +19,12 @@ def deepmind_Q(input_state, config, Collection=None):
 
     h_conv3_shape = head.get_shape().as_list()
     head = tf.reshape(
+        #head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="flat")
         head, [-1, h_conv3_shape[1] * h_conv3_shape[2] * h_conv3_shape[3]], name="conv3_flat")
 
     head = add_relu_layer(head, size=512, Collection=Collection)
     # the last layer is linear without a relu
     Q = add_linear_layer(head, config.action_num, Collection, layer_name="Q")
-    tf.histogram_summary("Q", Q, collections=Collection + "_summaries")
 
     # DQN summary
     for i in range(config.action_num):
@@ -116,7 +116,7 @@ def dqn_train_op(Q, Y, action, config, Collection):
         loss, config.learning_rate, 0.95, 0.01, 1)
 
     for grad, var in grads:
-        if grad is not None:
+        if grad is True:
             tf.histogram_summary(var.op.name + '/gradients', grad, name=var.op.name +
                                  '/gradients', collections=[Collection + "_summaries"])
     return train_op
@@ -176,8 +176,11 @@ def pdqn_train_op(Q, QT, r, rT, predicted_Q, predicted_QT, action, config, Colle
     return train_op
 
 # -- Primitive ops --
-def build_activation_summary(x, Collection):
-    tensor_name = x.op.name
+def build_activation_summary(x, Collection, name=None):
+    if name:
+        tensor_name = name
+    else:
+        tensor_name = x.op.name
     tf.histogram_summary(tensor_name + '/activations', x, collections=[Collection + "_summaries"])
     tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(x), collections=[Collection + "_summaries"])
 
@@ -245,6 +248,8 @@ def add_relu_layer(head, size, Collection, layer_name=None, weight_name=None):
         layer_name = "relu" + \
             str(len(tf.get_collection(Collection + "_relus")))
         tf.add_to_collection(Collection + "_relus", layer_name)
+    #head = add_linear_layer(
+    #    head, size, Collection, layer_name=layer_name+"_linear", weight_name=weight_name)
     head = add_linear_layer(
         head, size, Collection, weight_name=weight_name)
     new_head = tf.nn.relu(head, name=layer_name)

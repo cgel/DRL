@@ -25,7 +25,8 @@ parser.add_argument("-alpha", type=float, default=0.1)
 parser.add_argument("-update_summary_rate", type=int, default=50000)
 config = parser.parse_args()
 config.num_episodes = 50000
-config.log_online_summary_rate = 250
+config.log_online_summary_rate = 100
+#config.log_online_summary_rate = 10
 config.log_perf_summary_rate = 1000
 config.save_rate = 1000
 config.log_percent_rate = 1000
@@ -65,14 +66,13 @@ class Env:
         self.action_num = len(self.action_map)
 
     def reset(self):
-        state = np.zeros((84, 84, 3), dtype=np.uint8)
+        state = self.ale.getScreenRGB()
         self.ale.reset_game()
         return state
 
     def step(self, action):
-        #state = self.ale.getScreenGrayscale()
-        state = self.ale.getScreenRGB()
         reward = self.ale.act(self.action_map[action])
+        state = self.ale.getScreenRGB()
         done = self.ale.game_over()
         return state, reward, done, ""
 
@@ -90,8 +90,9 @@ agent = Agent(config, sess)
 if config.logging:
     int_folders = []
     for folder in os.listdir("log"):
-        if not set(folder[0]) - set(string.digits):
-            int_folders.append(int(folder))
+        folder_num = re.search(r"\d+", folder)
+        if folder_num:
+            int_folders.append(int(folder_num.group()))
     run_name = str(max(int_folders + [0]) + 1)+"-"+config.agent
     log_path = "log/" + run_name + "/"
     checkpoint_path = log_path + "checkpoint/"
@@ -112,13 +113,23 @@ else:
 agent.set_summary_writer(summary_writter)
 
 saver = tf.train.Saver(max_to_keep=20)
-if config.load_checkpoint != "":
-    ckpt_file = "log/"+re.search(r"\d+", config.load_checkpoint).group()+"/checkpoint/"+config.load_checkpoint
+
+def load_checkpoint():
+    run_num = re.search(r"\d+", config.load_checkpoint)
+    if run_num == None:
+        raise Exception("Not a run number in checkpoint file")
+    run_num = run_num.group()
+    for folder in os.listdir("log"):
+        folder_num = re.search(r"\d+", folder)
+        if folder_num and folder_num.group() == run_num:
+            ckpt_file = "log/"+folder+"/checkpoint/"+config.load_checkpoint
     print("loading: " + ckpt_file)
     saver.restore(sess, ckpt_file)
+
+if config.load_checkpoint != "":
+    load_checkpoint()
 else:
     sess.run(tf.initialize_all_variables())
-
 
 def test_run(n):
     agent.testing(True)
@@ -144,10 +155,10 @@ def train():
             score += r
         agent.done()
         ep_duration = time.time() - ep_begin_t
-        # online Summary
         if not config.logging:
             continue
         is_final_episode = config.num_episodes == episode
+        # online Summary
         if episode % config.log_online_summary_rate == 0 or is_final_episode:
             episode_online_summary = tf.Summary(
                 value=[
@@ -190,7 +201,7 @@ def train():
                             tag="test_score/"+action_mode+"_min",
                             simple_value=min(score_list)),
                     ])
-            summary_writter.add_summary(performance_summary, agent.step_count)
+                summary_writter.add_summary(performance_summary, agent.step_count)
             agent.set_action_mode(agent.default_action_mode)
 
 train()

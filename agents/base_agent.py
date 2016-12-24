@@ -17,10 +17,13 @@ class BaseAgent:
         self.step_count = 0
         self.episode = 0
         self.isTesting = False
+        self.game_state = np.zeros(
+            (1, 84, 84, self.config.buff_size), dtype=np.uint8)
         self.reset_game()
         self.timeout_option = tf.RunOptions(timeout_in_ms=5000)
 
     def step(self, x, r):
+        r = max(-1, min(1, r))
         if not self.isTesting:
             if not self.episode_begining:
                 self.RM.add(
@@ -28,13 +31,13 @@ class BaseAgent:
                         :, :, :, -1], self.game_action, self.game_reward, False)
             else:
                 self.episode_begining = False
-            self.game_action = self.e_greedy_action(self.epsilon())
             self.observe(x, r)
+            self.game_action = self.e_greedy_action(self.epsilon())
             self.update()
             self.step_count += 1
         else:
-            self.game_action = self.e_greedy_action(0.01)
             self.observe(x, r)
+            self.game_action = self.e_greedy_action(0.01)
         return self.game_action
 
     # Add the transition to RM and reset the internal state for the next
@@ -73,8 +76,7 @@ class BaseAgent:
 
     def reset_game(self):
         self.episode_begining = True
-        self.game_state = np.zeros(
-            (1, 84, 84, self.config.buff_size), dtype=np.uint8)
+        self.game_state.fill(0)
 
     def epsilon(self):
         if self.step_count < self.config.exploration_steps:

@@ -40,6 +40,11 @@ class Agent(BaseAgent):
             with tf.variable_scope("QT"):
                 self.QT = commonOps.deepmind_Q(
                     self.stateT_ph, config, "Target")
+                tf.scalar_summary(
+                    "main/next_Q_max", tf.reduce_max(self.QT), collections=["Target_summaries"])
+                tf.scalar_summary(
+                    "main/next_Q_0", tf.reduce_max(self.QT, 1)[0], collections=["Target_summaries"])
+
             self.train_op = commonOps.dqn_train_op(
                 self.Q, self.Y, self.action, config, "Normal")
             self.sync_QT_op = []
@@ -72,17 +77,19 @@ class Agent(BaseAgent):
         print("Starting enqueue thread")
         while not self.stop_enqueuing.isSet():
             state_batch, action_batch, reward_batch, next_state_batch, terminal_batch, _ = self.RM.sample_transition_batch()
+            feed_dict={self.stateT_ph: next_state_batch}
             if self.config.logging and self.step_count % self.config.update_summary_rate == 0:
-                QT_np, QT_summary_str = self.sess.run([self.QT, self.QT_summary_op], feed_dict={
-                    self.stateT_ph: next_state_batch}, options=self.timeout_option)
+                QT_np, QT_summary_str = self.sess.run([self.QT, self.QT_summary_op],
+                    feed_dict, options=self.timeout_option)
                 self.summary_writter.add_summary(
                     QT_summary_str, self.step_count)
+                self.summary_writter.add_summary(tf.Summary(value=[tf.Summary.Value(tag="main/r_max", simple_value=int(np.max(reward_batch)))]), self.step_count)
             else:
                 QT_np = self.sess.run(
                     self.QT,
-                    feed_dict={
-                        self.stateT_ph: next_state_batch},
+                    feed_dict,
                     options=self.timeout_option)
+
 
             QT_max_action = np.max(QT_np, 1)
             Y = reward_batch + self.config.gamma * \
@@ -94,16 +101,6 @@ class Agent(BaseAgent):
                 self.Y_ph: Y}
             self.sess.run(self.enqueue_op, feed_dict=feed_dict)
         print("Closing enqueue thread")
-
-    def e_greedy_action(self, epsilon):
-        if np.random.uniform() < epsilon:
-            action = random.randint(0, self.config.action_num - 1)
-        else:
-            action = np.argmax(
-                self.sess.run(
-                    self.Q, feed_dict={
-                        self.state: self.game_state})[0])
-        return action
 
     def __del__(self):
         self.stop_enqueuing.set()
