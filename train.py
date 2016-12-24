@@ -18,9 +18,10 @@ parser.add_argument("-initial_epsilon", type=float, default=1.)
 parser.add_argument("-final_epsilon", type=float, default=0.1)
 parser.add_argument("-buff_size", type=float, default=4)
 parser.add_argument("-load_checkpoint", default="")
-parser.add_argument("-agent", default="dqn")
+parser.add_argument("-agent", default="DQN")
 parser.add_argument("-logging", default="")
 parser.add_argument("-transition_function", default="oh_concat")
+parser.add_argument("-env_name", default="Breakout-v0")
 parser.add_argument("-alpha", type=float, default=0.1)
 parser.add_argument("-update_summary_rate", type=int, default=50000)
 config = parser.parse_args()
@@ -33,12 +34,8 @@ config.test_run_num = 20
 config.logging = config.logging not in ["0", "false", "False"]
 config.device = "/gpu:"+config.device
 print("Using agent "+config.agent)
-if config.agent == "dqn":
-    from agents.DQN import Agent
-elif config.agent == "pdqn":
-    from agents.PDQN import Agent
-else:
-    raise Exception(config.agent +" is not a valid agent")
+import importlib
+Agent = importlib.import_module("agents."+config.agent).Agent
 
 print("Logging: " + str(config.logging))
 if config.transition_function not in [
@@ -47,7 +44,7 @@ if config.transition_function not in [
 tf.logging.set_verbosity(tf.logging.ERROR)
 
 # from the selected agent import agent
-env = gym.make('Breakout-v0')
+env = gym.make(config.env_name)
 config.action_num = env.action_space.n
 
 sess_config = tf.ConfigProto()
@@ -64,7 +61,7 @@ if config.logging:
         folder_num = re.search(r"\d+", folder)
         if folder_num:
             int_folders.append(int(folder_num.group()))
-    run_name = str(max(int_folders + [0]) + 1)+"-"+config.agent
+    run_name = str(max(int_folders + [0]) + 1)+"-"+config.agent+"-"+config.env_name
     log_path = "log/" + run_name + "/"
     checkpoint_path = log_path + "checkpoint/"
     print("Starting run: " + str(run_name))

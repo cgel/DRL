@@ -86,13 +86,18 @@ def hidden_to_hidden(hidden_state, action, config, Collection):
     return head
 
 # -- Training ops --
-def dqn_train_op(Q, Y, action, config, Collection):
+def dqn_train_op(Q, QT, action, reward, terminal, config, Collection):
     with tf.name_scope("loss"):
         # could be done more efficiently with gather_nd or transpose + gather
         action_one_hot = tf.one_hot(
             action, config.action_num, 1., 0., name='action_one_hot')
         Q_acted = tf.reduce_sum(
             Q * action_one_hot, reduction_indices=1, name='DQN_acted')
+
+        QT_max_action = tf.reduce_max(QT, 1)
+        Y = reward + config.gamma * \
+            QT_max_action * (1 - terminal)
+        Y = tf.stop_gradient(Y)
 
         loss_batch = clipped_l2(Y, Q_acted)
         loss = tf.reduce_sum(loss_batch, name="loss")
@@ -111,6 +116,8 @@ def dqn_train_op(Q, Y, action, config, Collection):
             "main/acted_Q_0", Q_acted[0], collections=[Collection + "_summaries"])
         tf.scalar_summary(
             "main/acted_Q_max", tf.reduce_max(Q_acted), collections=[Collection + "_summaries"])
+        tf.scalar_summary(
+            "main/r_max", tf.reduce_max(reward), collections=[Collection + "_summaries"])
 
     train_op, grads = graves_rmsprop_optimizer(
         loss, config.learning_rate, 0.95, 0.01, 1)

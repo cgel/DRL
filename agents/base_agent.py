@@ -63,7 +63,7 @@ class BaseAgent:
             action = np.argmax(
                 self.sess.run(
                     self.Q, feed_dict={
-                        self.state: self.game_state})[0])
+                        self.state_ph: self.game_state})[0])
         return action
 
     def testing(self, t=True):
