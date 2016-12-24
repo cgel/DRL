@@ -26,7 +26,6 @@ parser.add_argument("-update_summary_rate", type=int, default=50000)
 config = parser.parse_args()
 config.num_episodes = 50000
 config.log_online_summary_rate = 100
-#config.log_online_summary_rate = 10
 config.log_perf_summary_rate = 1000
 config.save_rate = 1000
 config.log_percent_rate = 1000
@@ -35,7 +34,7 @@ config.logging = config.logging not in ["0", "false", "False"]
 config.device = "/gpu:"+config.device
 print("Using agent "+config.agent)
 if config.agent == "dqn":
-    from agents.deepmind_dqn import Agent
+    from agents.DQN import Agent
 elif config.agent == "pdqn":
     from agents.PDQN import Agent
 else:
@@ -48,36 +47,8 @@ if config.transition_function not in [
 tf.logging.set_verbosity(tf.logging.ERROR)
 
 # from the selected agent import agent
-#env = gym.make('Breakout-v0')
-#config.action_num = env.action_space.n
-
-from ale_python_interface import ALEInterface
-import numpy as np
-class Env:
-    def __init__(self):
-        self.ale = ALEInterface()
-        rom_name = "roms/Breakout.bin"
-        self.ale.setInt("frame_skip", 4)
-        self.ale.loadROM(rom_name)
-        legal_actions = self.ale.getMinimalActionSet()
-        self.action_map = {}
-        for i in range(len(legal_actions)):
-            self.action_map[i] = legal_actions[i]
-        self.action_num = len(self.action_map)
-
-    def reset(self):
-        state = self.ale.getScreenRGB()
-        self.ale.reset_game()
-        return state
-
-    def step(self, action):
-        reward = self.ale.act(self.action_map[action])
-        state = self.ale.getScreenRGB()
-        done = self.ale.game_over()
-        return state, reward, done, ""
-
-env = Env()
-config.action_num = env.action_num
+env = gym.make('Breakout-v0')
+config.action_num = env.action_space.n
 
 sess_config = tf.ConfigProto()
 sess_config.allow_soft_placement = True
