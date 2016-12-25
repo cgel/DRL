@@ -155,6 +155,7 @@ def train():
         # performance summary
         if episode % config.log_perf_summary_rate == 0 or is_final_episode:
             for action_mode in agent.action_modes:
+                print("testing in mode: "+action_mode)
                 agent.set_action_mode(action_mode)
                 score_list = test_run(n=config.test_run_num)
                 performance_summary = tf.Summary(

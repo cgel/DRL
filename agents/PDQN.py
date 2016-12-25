@@ -11,7 +11,7 @@ class Agent(BaseAgent):
 
     def __init__(self, config, session):
         BaseAgent.__init__(self, config, session)
-        self.action_modes = {"e_greedy":self.e_greedy_action, "pan_e_greedy":self.plan_e_greedy_action}
+        self.action_modes = {"e_greedy":self.e_greedy_action, "plan_e_greedy":self.plan_e_greedy_action}
         self.default_action_mode = "e_greedy"
         self.action_mode = self.default_action_mode
         # build the net
@@ -78,12 +78,12 @@ class Agent(BaseAgent):
         else:
             #should be optimized
             # instead of dequeuing feed the game state
-            feed_dict={self.state_queue:self.game_state, self.action_queue:[0]}
-            predicted_Rs, predicted_next_Q_0 = self.sess.run([self.predicted_r, self.predicted_next_Q], feed_dict)
+            feed_dict={self.state_ph:self.game_state, self.action_ph:[0]} # action 0
+            predicted_Rs, predicted_next_Q_0 = self.sess.run([self.predicted_reward, self.predicted_next_Q], feed_dict)
             predicted_next_Qs = np.zeros(self.config.action_num)
             predicted_next_Qs[0] = np.max(predicted_next_Q_0)
             for a in range(1, self.config.action_num):
-                feed_dict={self.state_queue:self.game_state, self.action_queue:[a]}
+                feed_dict={self.state_ph:self.game_state, self.action_ph:[a]}
                 predicted_next_Qs[a] == np.max(self.sess.run(self.predicted_next_Q, feed_dict))
             action = np.argmax(predicted_Rs + self.config.gamma * predicted_next_Qs)
         return action

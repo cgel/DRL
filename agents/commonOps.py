@@ -129,6 +129,7 @@ def dqn_train_op(Q, QT, action, reward, terminal, config, Collection):
     return train_op
 
 def pdqn_train_op(Q, predicted_reward, predicted_next_Q, QT, reward, action, terminal, config, Collection):
+    QT = tf.stop_gradient(QT)
     with tf.name_scope("loss"):
         # could be done more efficiently with gather_nd or transpose + gather
         action_one_hot = tf.one_hot(
@@ -141,7 +142,6 @@ def pdqn_train_op(Q, predicted_reward, predicted_next_Q, QT, reward, action, ter
         QT_max_action = tf.reduce_max(QT, 1)
         Y = reward + config.gamma * \
             QT_max_action * (1 - terminal)
-        Y = tf.stop_gradient(Y)
 
         Q_loss = tf.reduce_sum(
             clipped_l2(Y, Q_action), name="Q_loss")
