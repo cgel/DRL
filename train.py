@@ -22,7 +22,7 @@ parser.add_argument("-agent", default="DQN")
 parser.add_argument("-logging", default="")
 parser.add_argument("-transition_function", default="oh_concat")
 parser.add_argument("-env_name", default="Breakout-v0")
-parser.add_argument("-alpha", type=float, default=0.1)
+parser.add_argument("-alpha", type=float, default=0.9)
 parser.add_argument("-update_summary_rate", type=int, default=50000)
 config = parser.parse_args()
 config.num_episodes = 50000

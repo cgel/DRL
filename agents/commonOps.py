@@ -128,50 +128,54 @@ def dqn_train_op(Q, QT, action, reward, terminal, config, Collection):
                                  '/gradients', collections=[Collection + "_summaries"])
     return train_op
 
-
-def pdqn_train_op(Q, QT, r, rT, predicted_Q, predicted_QT, action, config, Collection):
+def pdqn_train_op(Q, predicted_reward, predicted_next_Q, QT, reward, action, terminal, config, Collection):
     with tf.name_scope("loss"):
         # could be done more efficiently with gather_nd or transpose + gather
         action_one_hot = tf.one_hot(
             action, config.action_num, 1., 0., name='action_one_hot')
         Q_action = tf.reduce_sum(
             Q * action_one_hot, reduction_indices=1, name='DQN_acted')
-        r_action = tf.reduce_sum(
-            r * action_one_hot, reduction_indices=1, name='DQN_acted')
+        predicted_reward_action = tf.reduce_sum(
+            predicted_reward * action_one_hot, reduction_indices=1, name='DQN_acted')
+
+        QT_max_action = tf.reduce_max(QT, 1)
+        Y = reward + config.gamma * \
+            QT_max_action * (1 - terminal)
+        Y = tf.stop_gradient(Y)
 
         Q_loss = tf.reduce_sum(
-            clipped_l2(QT, Q_action), name="Q_loss")
+            clipped_l2(Y, Q_action), name="Q_loss")
+
         # note that the target is defined over all actions
         prediction_loss = config.alpha / config.action_num * tf.reduce_sum(clipped_l2(
-            predicted_Q, predicted_QT, grad_clip=config.alpha), name="future_loss")
-        r_loss = config.alpha * tf.reduce_sum(
-            clipped_l2(r_action, rT), name="R_loss")
+            predicted_next_Q, QT, grad_clip=config.alpha), name="future_loss")
+
+        predicted_reward_loss = config.alpha * tf.reduce_sum(
+            clipped_l2(predicted_reward_action, reward), name="R_loss")
 
         # maybe add the linear factor 2(DQNR-real_R)(predicted_next_Q-next_Y)
-        combined_loss = Q_loss + prediction_loss + r_loss
+        combined_loss = Q_loss + prediction_loss + predicted_reward_loss
 
         tf.scalar_summary(
             "losses/Q", Q_loss, collections=[Collection + "_summaries"])
         tf.scalar_summary(
             "losses/predicted", prediction_loss, collections=[Collection + "_summaries"])
         tf.scalar_summary(
-            "losses/r", r_loss, collections=[Collection + "_summaries"])
+            "losses/r", predicted_reward_loss, collections=[Collection + "_summaries"])
         tf.scalar_summary(
             "losses/combined", combined_loss, collections=[Collection + "_summaries"])
 
         tf.scalar_summary(
-            "main/QT_0", QT[0], collections=[Collection + "_summaries"])
+            "main/QT_max_action_0", QT_max_action[0], collections=[Collection + "_summaries"])
         tf.scalar_summary(
-            "main/Q_0", Q_action[0], collections=[Collection + "_summaries"])
+            "main/Q_action_0", Q_action[0], collections=[Collection + "_summaries"])
         tf.scalar_summary(
-            "main/max_predicted_Q_0", tf.reduce_max(predicted_Q, 1)[0], collections=[Collection + "_summaries"])
-        tf.scalar_summary(
-            "main/predicted_QT_0", tf.reduce_max(predicted_QT, 1)[0], collections=[Collection + "_summaries"])
+            "main/max_predicted_Q_0", tf.reduce_max(predicted_next_Q, 1)[0], collections=[Collection + "_summaries"])
 
         tf.scalar_summary(
-            "main/r_0", r_action[0], collections=[Collection + "_summaries"])
+            "main/predicted_reward_0", predicted_reward_action[0], collections=[Collection + "_summaries"])
         tf.scalar_summary(
-            "main/rT_0", rT[0], collections=[Collection + "_summaries"])
+            "main/reward_0", reward[0], collections=[Collection + "_summaries"])
 
     train_op, grads = graves_rmsprop_optimizer(
         combined_loss, config.learning_rate, 0.95, 0.01, 1)
