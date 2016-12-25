@@ -10,5 +10,5 @@ Use ```tensorboard --logdir=log``` to view all the runs.
 
 You can see the arguments of each run in ```log/[run_name]/config.txt```
 
-## DQN on breakout-v0
+## DQN on breakout-v0 (unfinished run)
 ![tb_breakout-v0](./assets/tb_breakout-v0.jpg)
