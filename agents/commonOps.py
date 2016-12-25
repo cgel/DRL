@@ -91,7 +91,7 @@ def dqn_train_op(Q, QT, action, reward, terminal, config, Collection):
         # could be done more efficiently with gather_nd or transpose + gather
         action_one_hot = tf.one_hot(
             action, config.action_num, 1., 0., name='action_one_hot')
-        Q_acted = tf.reduce_sum(
+        acted_Q = tf.reduce_sum(
             Q * action_one_hot, reduction_indices=1, name='DQN_acted')
 
         QT_max_action = tf.reduce_max(QT, 1)
@@ -99,7 +99,7 @@ def dqn_train_op(Q, QT, action, reward, terminal, config, Collection):
             QT_max_action * (1 - terminal)
         Y = tf.stop_gradient(Y)
 
-        loss_batch = clipped_l2(Y, Q_acted)
+        loss_batch = clipped_l2(Y, acted_Q)
         loss = tf.reduce_sum(loss_batch, name="loss")
 
         tf.scalar_summary("losses/loss", loss,
@@ -113,11 +113,13 @@ def dqn_train_op(Q, QT, action, reward, terminal, config, Collection):
         tf.scalar_summary(
             "main/Y_max", tf.reduce_max(Y), collections=[Collection + "_summaries"])
         tf.scalar_summary(
-            "main/acted_Q_0", Q_acted[0], collections=[Collection + "_summaries"])
+            "main/QT_max_action_0", QT_max_action[0], collections=[Collection + "_summaries"])
         tf.scalar_summary(
-            "main/acted_Q_max", tf.reduce_max(Q_acted), collections=[Collection + "_summaries"])
+            "main/acted_Q_0", acted_Q[0], collections=[Collection + "_summaries"])
         tf.scalar_summary(
-            "main/r_max", tf.reduce_max(reward), collections=[Collection + "_summaries"])
+            "main/acted_Q_max", tf.reduce_max(acted_Q), collections=[Collection + "_summaries"])
+        tf.scalar_summary(
+            "main/reward_max", tf.reduce_max(reward), collections=[Collection + "_summaries"])
 
     train_op, grads = graves_rmsprop_optimizer(
         loss, config.learning_rate, 0.95, 0.01, 1)
@@ -134,7 +136,7 @@ def pdqn_train_op(Q, predicted_reward, predicted_next_Q, QT, reward, action, ter
         # could be done more efficiently with gather_nd or transpose + gather
         action_one_hot = tf.one_hot(
             action, config.action_num, 1., 0., name='action_one_hot')
-        Q_action = tf.reduce_sum(
+        acted_Q = tf.reduce_sum(
             Q * action_one_hot, reduction_indices=1, name='DQN_acted')
         predicted_reward_action = tf.reduce_sum(
             predicted_reward * action_one_hot, reduction_indices=1, name='DQN_acted')
@@ -144,7 +146,7 @@ def pdqn_train_op(Q, predicted_reward, predicted_next_Q, QT, reward, action, ter
             QT_max_action * (1 - terminal)
 
         Q_loss = tf.reduce_sum(
-            clipped_l2(Y, Q_action), name="Q_loss")
+            clipped_l2(Y, acted_Q), name="Q_loss")
 
         # note that the target is defined over all actions
         prediction_loss = config.alpha / config.action_num * tf.reduce_sum(clipped_l2(
@@ -166,16 +168,20 @@ def pdqn_train_op(Q, predicted_reward, predicted_next_Q, QT, reward, action, ter
             "losses/combined", combined_loss, collections=[Collection + "_summaries"])
 
         tf.scalar_summary(
+            "main/Y_0", Y[0], collections=[Collection + "_summaries"])
+        tf.scalar_summary(
+            "main/Y_max", tf.reduce_max(Y), collections=[Collection + "_summaries"])
+        tf.scalar_summary(
             "main/QT_max_action_0", QT_max_action[0], collections=[Collection + "_summaries"])
         tf.scalar_summary(
-            "main/Q_action_0", Q_action[0], collections=[Collection + "_summaries"])
+            "main/acted_Q_0", acted_Q[0], collections=[Collection + "_summaries"])
         tf.scalar_summary(
             "main/max_predicted_Q_0", tf.reduce_max(predicted_next_Q, 1)[0], collections=[Collection + "_summaries"])
 
         tf.scalar_summary(
             "main/predicted_reward_0", predicted_reward_action[0], collections=[Collection + "_summaries"])
         tf.scalar_summary(
-            "main/reward_0", reward[0], collections=[Collection + "_summaries"])
+            "main/reward_max", tf.reduce_max(reward), collections=[Collection + "_summaries"])
 
     train_op, grads = graves_rmsprop_optimizer(
         combined_loss, config.learning_rate, 0.95, 0.01, 1)

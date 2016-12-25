@@ -134,7 +134,7 @@ def train():
                         tag="online/epsilon",
                         simple_value=agent.epsilon()),
                     tf.Summary.Value(
-                        tag="online/score",
+                        tag="score/online",
                         simple_value=score),
                     tf.Summary.Value(
                         tag="online/global_step",
@@ -161,13 +161,13 @@ def train():
                 performance_summary = tf.Summary(
                     value=[
                         tf.Summary.Value(
-                            tag="test_score/"+action_mode+"_average",
+                            tag="score/test"+action_mode+"_average",
                             simple_value=sum(score_list)/len(score_list)),
                         tf.Summary.Value(
-                            tag="test_score/"+action_mode+"_max",
+                            tag="score/test"+action_mode+"_max",
                             simple_value=max(score_list)),
                         tf.Summary.Value(
-                            tag="test_score/"+action_mode+"_min",
+                            tag="score/test"+action_mode+"_min",
                             simple_value=min(score_list)),
                     ])
                 summary_writter.add_summary(performance_summary, agent.step_count)
