@@ -1,9 +1,4 @@
 import tensorflow as tf
-import numpy as np
-import cv2
-import random
-import threading
-from replayMemory import ReplayMemory
 import commonOps
 from base_agent import BaseAgent
 
@@ -12,13 +7,7 @@ class Agent(BaseAgent):
 
     def __init__(self, config, session):
         BaseAgent.__init__(self, config, session)
-        self.stop_enqueuing = threading.Event()
-
         # build the net
-        self.action_modes = {"e_greedy":self.e_greedy_action}
-        self.default_action_mode = "e_greedy"
-        self.action_mode = self.default_action_mode
-
         with tf.device(config.device):
             # Create all variables and the FIFOQueue
             self.state_ph = tf.placeholder(
@@ -53,17 +42,12 @@ class Agent(BaseAgent):
                 tf.get_collection("Target_summaries"))
 
     def update(self):
-        if self.step_count < self.config.steps_before_training:
-            return
-
         state_batch, action_batch, reward_batch, next_state_batch, terminal_batch, _ = self.RM.sample_transition_batch()
-
         feed_dict={self.state_ph: state_batch,
                     self.stateT_ph: next_state_batch,
                     self.action_ph: action_batch,
                     self.reward_ph: reward_batch,
                     self.terminal_ph: terminal_batch}
-
         if self.config.logging and self.step_count % self.config.update_summary_rate == 0:
             _, Q_summary_str = self.sess.run(
                 [self.train_op, self.Q_summary_op], feed_dict, options=self.timeout_option)
@@ -74,6 +58,3 @@ class Agent(BaseAgent):
 
         if self.step_count % self.config.sync_rate == 0:
             self.sess.run(self.sync_QT_op)
-
-    def __del__(self):
-        BaseAgent.__del__()
