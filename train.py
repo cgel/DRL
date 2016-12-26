@@ -117,6 +117,7 @@ def train():
     for episode in range(config.num_episodes):
         x, r, done, score = env.reset(), 0, False, 0
         ep_begin_t = time.time()
+        ep_begin_step_count = agent.step_count
         while not done:
             action = agent.step(x, r)
             x, r, done, info = env.step(action)
@@ -139,6 +140,9 @@ def train():
                     tf.Summary.Value(
                         tag="online/global_step",
                         simple_value=agent.step_count),
+                    tf.Summary.Value(
+                        tag="online/step_duration",
+                        simple_value=ep_duration/(agent.step_count - ep_begin_step_count)),
                     tf.Summary.Value(
                         tag="online/ep_duration_seconds",
                         simple_value=ep_duration)])
