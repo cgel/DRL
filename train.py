@@ -65,6 +65,7 @@ if config.logging:
     log_path = "log/" + run_name + "/"
     checkpoint_path = log_path + "checkpoint/"
     print("Starting run: " + str(run_name))
+    print("On divece: "+ str(config.device))
     summary_writter_ = tf.train.SummaryWriter(
         log_path, sess.graph, flush_secs=20)
     summary_writter = summary_writter_
