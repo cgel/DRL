@@ -8,6 +8,8 @@ The currently implemented agents are:
 * **DQN**
 * **PDQN** _Research project. Work in progress_
 
+Example usage:
+```python train.py -agent DQN -device 1 -env_name Breakout-v0```
 
 ## Understand the runs
 <img align="right" src="./assets/tb_runs.jpg">
@@ -19,6 +21,7 @@ Use ```tensorboard --logdir=log``` to view all the runs. They will be all organi
 You can also see the arguments of each run in ```log/[run_name]/config.txt```
 
 ## Performance
+**I have very limited compute resources and they are being uses for my research. I would really appreciate if somebody wanted to help by running DQN in different environments.**
 #### DQN on breakout-v0 for 50,000,000 steps
 ![tb_breakout-v0](./assets/tb_breakout-v0.jpg)
 _Note that Breakout-v0 != Breakout from DQN paper. It has 6 actions while the one from the paper had 4. This run clearly was still learning and needed to continue. When I have time I will test on the original Breakout._
