@@ -28,8 +28,8 @@ class BaseAgent:
         self.timeout_option = tf.RunOptions(timeout_in_ms=5000)
 
         # if the new agent needs other action modes define a different dict
-        self.action_modes = {"e_greedy":self.e_greedy_action}
-        self.default_action_mode = "e_greedy"
+        self.action_modes = {str(config.testing_epsilon)+"_greedy":self.e_greedy_action}
+        self.default_action_mode = self.action_modes.items()[0][0]
         self.action_mode = self.default_action_mode
 
         # dummy function for the first join
@@ -44,6 +44,11 @@ class BaseAgent:
                     self.game_state[
                         :, :, :, -1], self.game_action, self.game_reward, False)
             else:
+                for i in range(self.config.buff_size -1):
+                    # add the resetted buffer
+                    self.RM.add(
+                        self.game_state[
+                        :, :, :, i], 0, 0, False)
                 self.episode_begining = False
             self.observe(x, r)
             self.game_action = self.e_greedy_action(self.epsilon())
@@ -88,7 +93,7 @@ class BaseAgent:
 
     def set_action_mode(self, mode):
         if mode not in self.action_modes:
-            raise Exception(mode+" is not a valid action mode")
+            raise Exception(str(mode)+" is not a valid action mode")
         self.select_action = self.action_modes[mode]
 
     def reset_game(self):
@@ -102,6 +107,3 @@ class BaseAgent:
                  self.config.exploration_steps) * self.step_count
         else:
             return self.config.final_epsilon
-
-    def set_summary_writer(self, summary_writter):
-        self.summary_writter = summary_writter

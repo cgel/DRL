@@ -40,6 +40,10 @@ class Agent(BaseAgent):
             self.QT_summary_op = tf.merge_summary(
                 tf.get_collection("Target_summaries"))
 
+        self.summary_writter = tf.train.SummaryWriter(
+            self.config.log_path, self.sess.graph, flush_secs=20)
+
+
     def update(self):
         state_batch, action_batch, reward_batch, next_state_batch, terminal_batch, _ = self.RM.sample_transition_batch()
         feed_dict={self.state_ph: state_batch,

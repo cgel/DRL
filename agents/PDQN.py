@@ -7,8 +7,9 @@ class Agent(BaseAgent):
 
     def __init__(self, config, session):
         BaseAgent.__init__(self, config, session)
-        self.action_modes = {"e_greedy":self.e_greedy_action, "plan_e_greedy":self.plan_e_greedy_action}
-        self.default_action_mode = "e_greedy"
+        self.action_modes = {str(config.testing_epsilon)+"_greedy":self.e_greedy_action,
+                            "plan_"+str(config.testing_epsilon)+"_greedy":self.plan_e_greedy_action}
+        self.default_action_mode = self.action_modes.items()[0]
         self.action_mode = self.default_action_mode
         # build the net
         with tf.device(config.device):
@@ -45,6 +46,10 @@ class Agent(BaseAgent):
                 tf.get_collection("Normal_summaries"))
             self.QT_summary_op = tf.merge_summary(
                 tf.get_collection("Target_summaries"))
+
+        self.summary_writter = tf.train.SummaryWriter(
+            self.config.log_path, self.sess.graph, flush_secs=20)
+
 
     def update(self):
         state_batch, action_batch, reward_batch, next_state_batch, terminal_batch, _ = self.RM.sample_transition_batch()
@@ -128,21 +133,21 @@ class Agent(BaseAgent):
                 cops.clipped_l2(Y, acted_Q), name="Q_loss")
 
             # note that the target is defined over all actions
-            prediction_loss = config.alpha / config.action_num * tf.reduce_sum(cops.clipped_l2(
+            predicted_Q_loss = config.alpha / config.action_num * tf.reduce_sum(cops.clipped_l2(
                 predicted_next_Q, QT, grad_clip=config.alpha), name="future_loss")
 
             predicted_reward_loss = config.alpha * tf.reduce_sum(
                 cops.clipped_l2(predicted_reward_action, reward), name="R_loss")
 
             # maybe add the linear factor 2(DQNR-real_R)(predicted_next_Q-next_Y)
-            combined_loss = Q_loss + prediction_loss + predicted_reward_loss
+            combined_loss = Q_loss + predicted_Q_loss + predicted_reward_loss
 
             tf.scalar_summary(
                 "losses/Q", Q_loss, collections=[Collection + "_summaries"])
             tf.scalar_summary(
-                "losses/predicted", prediction_loss, collections=[Collection + "_summaries"])
+                "losses/predicted_Q", predicted_Q_loss, collections=[Collection + "_summaries"])
             tf.scalar_summary(
-                "losses/r", predicted_reward_loss, collections=[Collection + "_summaries"])
+                "losses/predicted_reward", predicted_reward_loss, collections=[Collection + "_summaries"])
             tf.scalar_summary(
                 "losses/combined", combined_loss, collections=[Collection + "_summaries"])
 

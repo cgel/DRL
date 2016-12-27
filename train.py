@@ -16,6 +16,7 @@ parser.add_argument("-gamma", type=float, default=0.99)
 parser.add_argument("-learning_rate", type=float, default=0.00025)
 parser.add_argument("-initial_epsilon", type=float, default=1.)
 parser.add_argument("-final_epsilon", type=float, default=0.1)
+parser.add_argument("-testing_epsilon", type=float, default=0.05)
 parser.add_argument("-buff_size", type=float, default=4)
 parser.add_argument("-load_checkpoint", default="")
 parser.add_argument("-agent", default="DQN")
@@ -25,7 +26,7 @@ parser.add_argument("-env_name", default="Breakout-v0")
 parser.add_argument("-alpha", type=float, default=0.9)
 parser.add_argument("-update_summary_rate", type=int, default=50000)
 config = parser.parse_args()
-config.num_episodes = 50000
+config.num_episodes = 100000
 config.log_online_summary_rate = 100
 config.log_perf_summary_rate = 1000
 config.save_rate = 1000
@@ -43,7 +44,6 @@ if config.transition_function not in [
     raise Exception(config.transition_function+" is not valid transition function")
 tf.logging.set_verbosity(tf.logging.ERROR)
 
-# from the selected agent import agent
 env = gym.make(config.env_name)
 config.action_num = env.action_space.n
 
@@ -53,8 +53,6 @@ sess_config.gpu_options.allow_growth = True
 sess_config.log_device_placement = False
 sess = tf.Session(config=sess_config)
 
-agent = Agent(config, sess)
-
 if config.logging:
     int_folders = []
     for folder in os.listdir("log"):
@@ -62,24 +60,18 @@ if config.logging:
         if folder_num:
             int_folders.append(int(folder_num.group()))
     run_name = str(max(int_folders + [0]) + 1)+"-"+config.agent+"-"+config.env_name
-    log_path = "log/" + run_name + "/"
-    checkpoint_path = log_path + "checkpoint/"
+    config.log_path = "log/" + run_name + "/"
+    checkpoint_path = config.log_path + "checkpoint/"
     print("Starting run: " + str(run_name))
-    print("On divece: "+ str(config.device))
-    summary_writter_ = tf.train.SummaryWriter(
-        log_path, sess.graph, flush_secs=20)
-    summary_writter = summary_writter_
+    print("On device: "+ str(config.device))
     os.makedirs(checkpoint_path)
-    config_log_file = open(log_path + "config.txt", 'w+')
+    config_log_file = open(config.log_path + "config.txt", 'w+')
     config_vars_dict = vars(config)
     for var in config_vars_dict:
         config_log_file.write(var + ": " + str(config_vars_dict[var]) + "\n")
     config_log_file.close()
-else:
-    #Not defined
-    summary_writter = 0
 
-agent.set_summary_writer(summary_writter)
+agent = Agent(config, sess)
 
 saver = tf.train.Saver(max_to_keep=20)
 
@@ -147,7 +139,7 @@ def train():
                     tf.Summary.Value(
                         tag="online/ep_duration_seconds",
                         simple_value=ep_duration)])
-            summary_writter.add_summary(episode_online_summary, episode)
+            agent.summary_writter.add_summary(episode_online_summary, episode)
         # log percent
         if episode % config.log_percent_rate == 0 and episode != 0 or is_final_episode:
             percent = float(episode) / config.num_episodes * 100
@@ -166,16 +158,16 @@ def train():
                 performance_summary = tf.Summary(
                     value=[
                         tf.Summary.Value(
-                            tag="score/test"+action_mode+"_average",
+                            tag="score/"+action_mode+"_average",
                             simple_value=sum(score_list)/len(score_list)),
                         tf.Summary.Value(
-                            tag="score/test"+action_mode+"_max",
+                            tag="score/"+action_mode+"_max",
                             simple_value=max(score_list)),
                         tf.Summary.Value(
-                            tag="score/test"+action_mode+"_min",
+                            tag="score/"+action_mode+"_min",
                             simple_value=min(score_list)),
                     ])
-                summary_writter.add_summary(performance_summary, agent.step_count)
+                agent.summary_writter.add_summary(performance_summary, agent.step_count)
             agent.set_action_mode(agent.default_action_mode)
 
 train()
