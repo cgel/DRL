@@ -49,14 +49,14 @@ class ReplayMemory:
             if self.filled:
                 index = random.randint(0, self.capacity - 2) # -2 because index +1 will be used for next state
                 # if index is in the space we are currently writing
-                if index >= self.current and index - self.buff_size < self.current:
+                if index >= self.current and index - self.buff_size <= self.current:
                     continue
             else:
                 # can't start from 0 because get_state would loop back to the end -- wich is uninitialized.
                 # index +1 can be terminal
                 index = random.randint(self.buff_size -1, self.current -2)
 
-            if self.terminals[(index - self.buff_size -1):index].any():
+            if self.terminals[(index - self.buff_size):index].any():
                 continue
             self.state_batch[len(indexes)] = self.get_state(index)
             self.next_state_batch[len(indexes)] = self.get_state(index + 1)
