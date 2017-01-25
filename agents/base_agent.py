@@ -2,7 +2,6 @@ import tensorflow as tf
 import numpy as np
 import cv2
 import random
-import threading
 from replayMemory import ReplayMemory
 import commonOps
 import time
@@ -32,10 +31,6 @@ class BaseAgent:
         self.default_action_mode = self.action_modes.items()[0][0]
         self.action_mode = self.default_action_mode
 
-        # dummy function for the first join
-        self.update_thread = threading.Thread(target=lambda: 0)
-        self.update_thread.start()
-
     def step(self, x, r):
         r = max(-1, min(1, r))
         if not self.isTesting:
@@ -52,10 +47,7 @@ class BaseAgent:
                 self.episode_begining = False
             self.observe(x, r)
             self.game_action = self.e_greedy_action(self.epsilon())
-            if self.step_count > self.config.steps_before_training:
-                self.update_thread.join()
-                self.update_thread = threading.Thread(target=self.update)
-                self.update_thread.start()
+            self.update()
             self.step_count += 1
         else:
             self.observe(x, r)
