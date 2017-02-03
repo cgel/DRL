@@ -7,6 +7,7 @@ import commonOps
 import time
 
 
+"Abstract agent class that implements a observation buffer and handles the replay memory."
 class BaseAgent:
 
     # must be implemented by each agent
