@@ -1,4 +1,5 @@
 import numpy as np
+import threading as th
 import random
 
 class ReplayMemory:
@@ -15,6 +16,13 @@ class ReplayMemory:
         self.current = 0
         self.step = 0
         self.filled = False
+
+        self.cache_full = th.Event()
+        self.cache_empty = th.Event()
+        self.stop_caching = False
+        self.cache_thread = th.Thread(target=self.cache_loop)
+        self.cache_thread.setDaemon(True)
+        self.cache_thread.start()
 
     def add(self, screen, action, reward, terminal):
         self.screens[self.current] = screen
@@ -41,6 +49,12 @@ class ReplayMemory:
         return np.transpose(state, [1,2,0])
 
     def sample_transition_batch(self):
+        self.cache_ready.wait()
+        self.cache_full.clear()
+        self.cache_empty.set()
+        return self.state_batch, self.action_batch, self.reward_batch, self.next_state_batch, self.terminal_batch, self.indexes
+
+    def cache_transition_batch(self):
         if self.filled == False:
           assert self.current >= self.batch_size, "There is not enough to sample. Call add bathc_size times"
         indexes = []
@@ -61,7 +75,19 @@ class ReplayMemory:
             self.state_batch[len(indexes)] = self.get_state(index)
             self.next_state_batch[len(indexes)] = self.get_state(index + 1)
             indexes.append(index)
-        action_batch = self.actions[indexes]
-        reward_batch = self.rewards[indexes]
-        terminal_batch = self.terminals[indexes]
-        return self.state_batch, action_batch, reward_batch, self.next_state_batch, terminal_batch, indexes
+
+        self.action_batch = self.actions[indexes]
+        self.reward_batch = self.rewards[indexes]
+        self.terminal_batch = self.terminals[indexes]
+        self.indexes = indexes
+
+    def cache_loop(self):
+        while self.stop_caching == False:
+            self.cache_empty.wait()
+            cache_transition_batch()
+            self.cache_full.set()
+            self.cache_empty.clear()
+
+    def __del__(self):
+        self.stop_cache = True
+        self.cache_thread.join()
