@@ -46,7 +46,7 @@ if config.transition_function not in [
     raise Exception(config.transition_function+" is not valid transition function")
 tf.logging.set_verbosity(tf.logging.ERROR)
 
-if len(config.env.split("-")) == 1:
+if len(config.env_name.split("-")) == 1:
     # if env does not end in -v0 use alewrap
     class Env:
         def __init__(self):
