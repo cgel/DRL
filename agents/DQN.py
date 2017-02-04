@@ -1,7 +1,6 @@
 import tensorflow as tf
 import commonOps as cops
-from base_agent import BaseAgent
-
+from baseAgent import BaseAgent
 
 class DQN(BaseAgent):
 
