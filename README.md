@@ -7,6 +7,7 @@ Agents are derived from the ```BaseAgent``` class, so that a particular algorith
 The currently implemented agents are:
 * **DQN**
 * **DoubleDQN**
+* **DuelingDoubleDQN**
 
 Example usage:
 ```python train.py -agent DQN -device 1 -env_name Breakout-v0```
