@@ -4,6 +4,8 @@ import time
 import string
 import os
 import re
+from ale_python_interface import ALEInterface
+import numpy as np
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("-batch_size", type=int, default=32)
@@ -44,8 +46,36 @@ if config.transition_function not in [
     raise Exception(config.transition_function+" is not valid transition function")
 tf.logging.set_verbosity(tf.logging.ERROR)
 
-env = gym.make(config.env_name)
-config.action_num = env.action_space.n
+if len(config.env.split("-")) == 1:
+    # if env does not end in -v0 use alewrap
+    class Env:
+        def __init__(self):
+            self.ale = ALEInterface()
+            rom_name = "roms/Breakout.bin"
+            self.ale.setInt("frame_skip", 4)
+            self.ale.loadROM(rom_name)
+            legal_actions = self.ale.getMinimalActionSet()
+            self.action_map = {}
+            for i in range(len(legal_actions)):
+                self.action_map[i] = legal_actions[i]
+            self.action_num = len(self.action_map)
+
+        def reset(self):
+            state = np.zeros((84, 84, 3), dtype=np.uint8)
+            self.ale.reset_game()
+            return state
+
+        def step(self, action):
+            reward = self.ale.act(self.action_map[action])
+            state = self.ale.getScreenRGB()
+            done = self.ale.game_over()
+            return state, reward, done, ""
+    env = Env()
+    config.action_num = env.action_num
+else:
+    # else use gym
+    env = gym.make(config.env_name)
+    config.action_num = env.action_space.n
 
 sess_config = tf.ConfigProto()
 sess_config.allow_soft_placement = True
@@ -171,5 +201,3 @@ def train():
             agent.set_action_mode(agent.default_action_mode)
 
 train()
-
-# Write summary about the run.
