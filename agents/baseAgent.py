@@ -36,17 +36,8 @@ class BaseAgent:
     def step(self, x, r):
         r = max(-1, min(1, r))
         if not self.isTesting:
-            if not self.episode_begining:
-                self.RM.add(
-                    self.game_state[
-                        :, :, :, -1], self.game_action, self.game_reward, False)
-            else:
-                for i in range(self.config.buff_size -1):
-                    # add the resetted buffer
-                    self.RM.add(
-                        self.game_state[
-                        :, :, :, i], 0, 0, False)
-                self.episode_begining = False
+            self.RM.add(self.game_state[:, :, :, -1],
+                        self.game_action, self.game_reward, False)
             self.observe(x, r)
             self.game_action = self.e_greedy_action(self.epsilon())
             if self.step_count > self.config.steps_before_training:
@@ -92,8 +83,11 @@ class BaseAgent:
         self.select_action = self.action_modes[mode]
 
     def reset_game(self):
-        self.episode_begining = True
         self.game_state.fill(0)
+        if not self.isTesting:
+            # add initial black screens for next episode
+            for i in range(self.config.buff_size -1):
+                self.RM.add(np.zeros((84,84)), 0, 0, False)
 
     def epsilon(self):
         if self.step_count < self.config.exploration_steps:
