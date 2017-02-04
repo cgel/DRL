@@ -36,7 +36,7 @@ config.logging = config.logging not in ["0", "false", "False"]
 config.device = "/gpu:"+config.device
 print("Using agent "+config.agent)
 import importlib
-Agent = importlib.import_module("agents."+config.agent).Agent
+Agent = getattr(importlib.import_module("agents."+config.agent), config.agent)
 
 print("Logging: " + str(config.logging))
 if config.transition_function not in [
