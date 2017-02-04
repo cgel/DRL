@@ -7,7 +7,8 @@ import commonOps
 import time
 
 
-"Abstract agent class that implements a observation buffer and handles the replay memory."
+# Abstract agent class that implements a observation buffer and handles the replay memory
+
 class BaseAgent:
 
     # must be implemented by each agent
@@ -48,7 +49,8 @@ class BaseAgent:
                 self.episode_begining = False
             self.observe(x, r)
             self.game_action = self.e_greedy_action(self.epsilon())
-            self.update()
+            if self.step_count > self.config.steps_before_training:
+                self.update()
             self.step_count += 1
         else:
             self.observe(x, r)
