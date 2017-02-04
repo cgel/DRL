@@ -84,6 +84,8 @@ class BaseAgent:
 
     def reset_game(self):
         self.game_state.fill(0)
+        self.game_action = 0
+        self.game_reward = 0
         if not self.isTesting:
             # add initial black screens for next episode
             for i in range(self.config.buff_size -1):
