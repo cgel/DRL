@@ -1,6 +1,7 @@
 import numpy as np
 import threading as th
 import random
+import time
 
 class ReplayMemory:
     def __init__(self, config):
@@ -17,18 +18,23 @@ class ReplayMemory:
         self.step = 0
         self.filled = False
 
+        self.lock = th.Lock()
+
         self.cache_full = th.Event()
         self.cache_empty = th.Event()
+        self.cache_empty.set()
         self.stop_caching = False
         self.cache_thread = th.Thread(target=self.cache_loop)
         self.cache_thread.setDaemon(True)
         self.cache_thread.start()
 
     def add(self, screen, action, reward, terminal):
+        self.lock.acquire()
         self.screens[self.current] = screen
         self.actions[self.current] = action
         self.rewards[self.current] = reward
         self.terminals[self.current] = terminal
+        self.lock.release()
         self.current += 1
         self.step += 1
         if self.current == self.capacity:
@@ -49,14 +55,15 @@ class ReplayMemory:
         return np.transpose(state, [1,2,0])
 
     def sample_transition_batch(self):
-        self.cache_ready.wait()
+        if self.filled == False:
+          assert self.current >= self.batch_size, "There are to few samples. At least add() batch_size times"
+        self.cache_full.wait()
         self.cache_full.clear()
         self.cache_empty.set()
         return self.state_batch, self.action_batch, self.reward_batch, self.next_state_batch, self.terminal_batch, self.indexes
 
     def cache_transition_batch(self):
-        if self.filled == False:
-          assert self.current >= self.batch_size, "There is not enough to sample. Call add bathc_size times"
+        self.lock.acquire()
         indexes = []
         while len(indexes) != self.batch_size:
             # index, is the index of state, and index + 1 of next_state
@@ -80,11 +87,16 @@ class ReplayMemory:
         self.reward_batch = self.rewards[indexes]
         self.terminal_batch = self.terminals[indexes]
         self.indexes = indexes
+        self.lock.release()
 
     def cache_loop(self):
+        # until there is a reasonable number of samples
+        while self.current < self.batch_size:
+            time.sleep(0.5)
+        # start caching
         while self.stop_caching == False:
             self.cache_empty.wait()
-            cache_transition_batch()
+            self.cache_transition_batch()
             self.cache_full.set()
             self.cache_empty.clear()
 
