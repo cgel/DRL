@@ -60,7 +60,7 @@ class ReplayMemory:
         self.cache_full.wait()
         self.cache_full.clear()
         self.cache_empty.set()
-        return self.state_batch, self.action_batch, self.reward_batch, self.next_state_batch, self.terminal_batch, self.indexes
+        return self.state_batch.copy(), self.action_batch, self.reward_batch, self.next_state_batch.copy(), self.terminal_batch, self.indexes
 
     def cache_transition_batch(self):
         self.lock.acquire()
