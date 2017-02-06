@@ -17,9 +17,9 @@ class DoubleDQN(DQN):
             self.QT = self.Q_network(
                 self.stateT_ph, "Target")
             tf.scalar_summary(
-                "main/next_Q_max", tf.reduce_max(self.QT), collections=["Target_summaries"])
+                "main/next_Q_max", tf.reduce_max(self.QT), collections=["Target"])
             tf.scalar_summary(
-                "main/next_Q_0", tf.reduce_max(self.QT, 1)[0], collections=["Target_summaries"])
+                "main/next_Q_0", tf.reduce_max(self.QT, 1)[0], collections=["Target"])
 
     def Q_target(self):
         target_action = tf.argmax(self.DoubleQT, axis=1)
@@ -27,7 +27,6 @@ class DoubleDQN(DQN):
             target_action, self.config.action_num, 1., 0., name='target_action_one_hot')
 
         DoubleQT_acted = tf.reduce_sum(
-            self.QT * target_action_one_hot, reduction_indices=1, name='DoubleQT')
-        Y =  self.reward_ph + self.config.gamma * \
-            DoubleQT_acted * (1 - self.terminal_ph)
+            self.QT * target_action_one_hot, axis=1, name='DoubleQT')
+        Y =  self.reward_ph + self.config.gamma * DoubleQT_acted * (1 - self.terminal_ph)
         return Y

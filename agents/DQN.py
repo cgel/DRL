@@ -7,7 +7,6 @@ class DQN(BaseAgent):
     def __init__(self, config, session):
         BaseAgent.__init__(self, config, session)
         # this initializer is rather awkward but allows a lot of code reutilization
-
         with tf.device(config.device):
             # Create all variables and the FIFOQueue
             self.state_ph = tf.placeholder(
@@ -17,23 +16,22 @@ class DQN(BaseAgent):
             self.action_ph = tf.placeholder(tf.int64, [None], name="action_ph")
             self.reward_ph = tf.placeholder(tf.float32, [None], name="reward_ph")
             self.terminal_ph = tf.placeholder(tf.float32, [None], name="terminal_ph")
-        self.build_NNs()
-        self.build_sync_and_train()
+            self.build_NNs()
+            self.build_sync_and_train()
         if config.logging:
                 self.summary_writter = tf.train.SummaryWriter(
                     self.config.log_path, self.sess.graph, flush_secs=20)
 
     def build_NNs(self):
-        # Define all the ops
-            with tf.variable_scope("Q"):
-                self.Q = self.Q_network(self.state_ph, "Normal")
-            with tf.variable_scope("QT"):
-                self.QT = self.Q_network(
-                    self.stateT_ph, "Target")
-                tf.scalar_summary(
-                    "main/next_Q_max", tf.reduce_max(self.QT), collections=["Target_summaries"])
-                tf.scalar_summary(
-                    "main/next_Q_0", tf.reduce_max(self.QT, 1)[0], collections=["Target_summaries"])
+        with tf.variable_scope("Q"):
+            self.Q = self.Q_network(self.state_ph, "Normal")
+        with tf.variable_scope("QT"):
+            self.QT = self.Q_network(
+                self.stateT_ph, "Target")
+            tf.scalar_summary(
+                "main/next_Q_max", tf.reduce_max(self.QT), collections=["Target"])
+            tf.scalar_summary(
+                "main/next_Q_0", tf.reduce_max(self.QT, 1)[0], collections=["Target"])
 
     def build_sync_and_train(self):
             self.train_op = self.train_op("Normal")
@@ -57,10 +55,12 @@ class DQN(BaseAgent):
                     self.reward_ph: reward_batch,
                     self.terminal_ph: terminal_batch}
         if self.config.logging and self.step_count % self.config.update_summary_rate == 0:
-            _, Q_summary_str = self.sess.run(
-                [self.train_op, self.Q_summary_op], feed_dict, options=self.timeout_option)
+            _, Q_summary_str, QT_summary_str = self.sess.run(
+                [self.train_op, self.Q_summary_op, self.QT_summary_op], feed_dict, options=self.timeout_option)
             self.summary_writter.add_summary(
                 Q_summary_str, self.step_count)
+            self.summary_writter.add_summary(
+                QT_summary_str, self.step_count)
         else:
             _ = self.sess.run(self.train_op, feed_dict, options=self.timeout_option)
 
