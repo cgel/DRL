@@ -58,9 +58,10 @@ class ReplayMemory:
         if self.filled == False:
           assert self.current >= self.batch_size, "There are to few samples. At least add() batch_size times"
         self.cache_full.wait()
+        transition_ba = [self.state_batch.copy(), self.action_batch, self.reward_batch, self.next_state_batch.copy(), self.terminal_batch, self.indexes]
         self.cache_full.clear()
         self.cache_empty.set()
-        return self.state_batch.copy(), self.action_batch, self.reward_batch, self.next_state_batch.copy(), self.terminal_batch, self.indexes
+        return transition_ba
 
     def cache_transition_batch(self):
         self.lock.acquire()
