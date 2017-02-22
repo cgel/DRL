@@ -19,7 +19,14 @@ def flatten(head):
         head, [-1, shape[1] * shape[2] * shape[3]])
     return head
 
-# -- Primitive ops --
+
+def build_scalar_summary(x, Collection, name=None):
+    if name:
+        tensor_name = name
+    else:
+        tensor_name = x.op.name
+    tf.scalar_summary(tensor_name, tf.squeeze(x), collections=[Collection + "_summaries"])
+
 def build_activation_summary(x, Collection, name=None):
     if name:
         tensor_name = name
@@ -27,6 +34,13 @@ def build_activation_summary(x, Collection, name=None):
         tensor_name = x.op.name
     tf.histogram_summary(tensor_name + '/activations', x, collections=[Collection + "_summaries"])
     tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(x), collections=[Collection + "_summaries"])
+
+def build_hist_summary(x, Collection, name=None):
+    if name:
+        tensor_name = name
+    else:
+        tensor_name = x.op.name
+    tf.histogram_summary(tensor_name + '/activations', x, collections=[Collection + "_summaries"])
 
 
 def conv2d(x, W, stride, name):
@@ -83,7 +97,7 @@ def add_linear_layer(head, size, Collection, layer_name=None, weight_name=None):
         stddev=std), Collection=Collection)
 
     new_head = tf.matmul(head, w, name=layer_name)
-    build_activation_summary(new_head, Collection)
+    build_hist_summary(new_head, Collection)
     return new_head
 
 

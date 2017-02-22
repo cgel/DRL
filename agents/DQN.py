@@ -28,10 +28,8 @@ class DQN(BaseAgent):
         with tf.variable_scope("QT"):
             self.QT = self.Q_network(
                 self.stateT_ph, "Target")
-            tf.scalar_summary(
-                "main/next_Q_max", tf.reduce_max(self.QT), collections=["Target"])
-            tf.scalar_summary(
-                "main/next_Q_0", tf.reduce_max(self.QT, 1)[0], collections=["Target"])
+            cops.build_scalar_summary(tf.reduce_max(self.QT, 1)[0], "Target", "main/next_Q_0")
+            cops.build_scalar_summary(tf.reduce_max(self.QT), "Target", "main/next_Q_max")
 
     def build_sync_and_train(self):
             self.train_op = self.train_op("Normal")
@@ -79,8 +77,7 @@ class DQN(BaseAgent):
         Q = cops.add_linear_layer(head, self.config.action_num, Collection, layer_name="Q")
         # DQN summary
         for i in range(self.config.action_num):
-            tf.scalar_summary("DQN/action" + str(i),
-                                     Q[0, i], collections=["Q_summaries"])
+            cops.build_scalar_summary(Q[0, i], Collection, "Q/Q_0_"+str(i))
         return Q
 
     def Q_target(self):
@@ -103,28 +100,19 @@ class DQN(BaseAgent):
             loss_batch = cops.clipped_l2(Y, acted_Q)
             loss = tf.reduce_sum(loss_batch, name="loss")
 
-            tf.scalar_summary("losses/loss", loss,
-                              collections=[Collection + "_summaries"])
-            tf.scalar_summary("losses/loss_0", loss_batch[0],
-                              collections=[Collection + "_summaries"])
-            tf.scalar_summary("losses/loss_max", tf.reduce_max(loss_batch),
-                              collections=[Collection + "_summaries"])
-            tf.scalar_summary(
-                "main/Y_0", Y[0], collections=[Collection + "_summaries"])
-            tf.scalar_summary(
-                "main/Y_max", tf.reduce_max(Y), collections=[Collection + "_summaries"])
-            tf.scalar_summary(
-                "main/acted_Q_0", acted_Q[0], collections=[Collection + "_summaries"])
-            tf.scalar_summary(
-                "main/acted_Q_max", tf.reduce_max(acted_Q), collections=[Collection + "_summaries"])
-            tf.scalar_summary(
-                "main/reward_max", tf.reduce_max(self.reward_ph), collections=[Collection + "_summaries"])
+            cops.build_scalar_summary(loss, Collection, "losses/loss")
+            cops.build_scalar_summary(loss_batch[0], Collection, "losses/loss_0")
+            cops.build_scalar_summary(tf.reduce_max(loss_batch), Collection, "losses/loss_max")
+            cops.build_scalar_summary(Y[0], Collection, "main/Y_0")
+            cops.build_scalar_summary(tf.reduce_max(Y), Collection, "main/Y_max")
+            cops.build_scalar_summary(acted_Q[0], Collection, "main/acted_Q_0")
+            cops.build_scalar_summary(tf.reduce_max(acted_Q), Collection, "main/acted_Q_max")
+            cops.build_scalar_summary(tf.reduce_max(self.reward_ph), Collection, "main/reward_max")
 
         train_op, grads = cops.graves_rmsprop_optimizer(
             loss, self.config.learning_rate, 0.95, 0.01, 1)
 
         for grad, var in grads:
             if grad is True:
-                tf.histogram_summary(var.op.name + '/gradients', grad, name=var.op.name +
-                                     '/gradients', collections=[Collection + "_summaries"])
+                cops.build_hist_summary(grad, Collection, var.op.name + '/gradients')
         return train_op

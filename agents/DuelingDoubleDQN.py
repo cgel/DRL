@@ -22,12 +22,9 @@ class DuelingDoubleDQN(DoubleDQN):
         A_head = cops.add_relu_layer(head, size=512, Collection=Collection)
         A = cops.add_linear_layer(A_head, self.config.action_num, Collection, layer_name="A")
         Q = tf.add(A, V - tf.expand_dims(tf.reduce_mean(A, axis=1)/self.config.action_num, axis=1) )
-        # DQN summary
-        tf.scalar_summary("Q/V_0_",
-                                 V[0], collections=["Normal"])
+
+        cops.build_scalar_summary(V[0], Collection, "Q/V_0")
         for i in range(self.config.action_num):
-            tf.scalar_summary("Q/Q_0_" + str(i),
-                                     Q[0, i], collections=["Normal"])
-            tf.scalar_summary("Q/A_0_" + str(i),
-                                     A[0, i], collections=["Normal"])
+            cops.build_scalar_summary(Q[0, i], Collection, "Q/Q_0_"+str(i))
+            cops.build_scalar_summary(A[0, i], Collection, "Q/A_0_"+str(i))
         return Q

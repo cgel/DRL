@@ -11,7 +11,7 @@ class DoubleDQN(DQN):
             self.Q = self.Q_network(self.state_ph, "Normal")
             scope.reuse_variables()
             # the network with online weights used to select the actions of the target network
-            self.DoubleQT = self.Q_network(self.stateT_ph, "Target")
+            self.DoubleQT = self.Q_network(self.stateT_ph, "")
 
         with tf.variable_scope("QT"):
             self.QT = self.Q_network(
