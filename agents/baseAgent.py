@@ -6,8 +6,23 @@ from replayMemory import ReplayMemory
 import commonOps
 import time
 
-
-# Abstract agent class that implements a observation buffer and handles the replay memory
+# Abstract agent class that implements a observation
+# buffer and handles the replay memory
+#
+# the interface consists of:
+#   step(screen, reward)    returns the action
+#   terminal()              call it when the episode is finished
+#   self.action_modes       dictionary that allows the agent to use different
+#                           action selection alogrithms durning testing.
+#                           The base class only has e_greedy (testing_epsilon greedy)
+#                           but chilldren can add others.
+#
+# Notes for the creation of chilldren agents:
+#   Must implement the update function
+#   self.RM is the replay memory
+#   self.game_state is a buffer of screens of size config.buff_size
+#   self.game_reward is the latest reward received
+#   sefl.game_action is the latest action taken
 
 class BaseAgent:
 
@@ -29,40 +44,43 @@ class BaseAgent:
         self.timeout_option = tf.RunOptions(timeout_in_ms=5000)
 
         # if the new agent needs other action modes define a different dict
-        self.action_modes = {str(config.testing_epsilon)+"_greedy":self.e_greedy_action}
+        self.action_modes = {
+            str(config.testing_epsilon) + "_greedy": self.e_greedy_action}
         self.default_action_mode = self.action_modes.items()[0][0]
         self.action_mode = self.default_action_mode
 
-    def step(self, x, r):
-        r = max(-1, min(1, r))
+    def step(self, screen, reward):
+        # clip the reward
         if not self.isTesting:
+            # add the last transition
             self.RM.add(self.game_state[:, :, :, -1],
                         self.game_action, self.game_reward, False)
-            self.observe(x, r)
+            self.observe(screen, reward)
             self.game_action = self.e_greedy_action(self.epsilon())
             if self.step_count > self.config.steps_before_training:
                 self.update()
             self.step_count += 1
         else:
-            self.observe(x, r)
+            # if the agent is testing
+            self.observe(screen, reward)
             self.game_action = self.e_greedy_action(0.01)
         return self.game_action
 
-    # Add the transition to RM and reset the internal state for the next
+    # Add the final transition to the RM and reset the internal state for the next
     # episode
-    def done(self):
+    def terminal(self):
         if not self.isTesting:
             self.RM.add(
                 self.game_state[:, :, :, -1],
                 self.game_action, self.game_reward, True)
         self.reset_game()
 
-    def observe(self, x, r):
-        self.game_reward = r
-        x_ = cv2.resize(x, (84, 84))
-        x_ = cv2.cvtColor(x_, cv2.COLOR_RGB2GRAY)
+    def observe(self, screen, reward):
+        self.game_reward = max(-1, min(1, reward))
+        screen = cv2.resize(screen, (84, 84))
+        screen = cv2.cvtColor(screen, cv2.COLOR_RGB2GRAY)
         self.game_state = np.roll(self.game_state, -1, axis=3)
-        self.game_state[0, :, :, -1] = x_
+        self.game_state[0, :, :, -1] = screen
 
     def e_greedy_action(self, epsilon):
         if np.random.uniform() < epsilon:
@@ -79,7 +97,7 @@ class BaseAgent:
 
     def set_action_mode(self, mode):
         if mode not in self.action_modes:
-            raise Exception(str(mode)+" is not a valid action mode")
+            raise Exception(str(mode) + " is not a valid action mode")
         self.select_action = self.action_modes[mode]
 
     def reset_game(self):
@@ -88,8 +106,8 @@ class BaseAgent:
         self.game_reward = 0
         if not self.isTesting:
             # add initial black screens for next episode
-            for i in range(self.config.buff_size -1):
-                self.RM.add(np.zeros((84,84)), 0, 0, False)
+            for i in range(self.config.buff_size - 1):
+                self.RM.add(np.zeros((84, 84)), 0, 0, False)
 
     def epsilon(self):
         if self.step_count < self.config.exploration_steps:
