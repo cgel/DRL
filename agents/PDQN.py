@@ -3,7 +3,9 @@ import numpy as np
 import commonOps as cops
 from base_agent import BaseAgent
 
-class Agent(BaseAgent):
+# Just an experiment
+
+class PDQN(BaseAgent):
 
     def __init__(self, config, session):
         BaseAgent.__init__(self, config, session)
@@ -46,9 +48,9 @@ class Agent(BaseAgent):
                 tf.get_collection("Normal_summaries"))
             self.QT_summary_op = tf.merge_summary(
                 tf.get_collection("Target_summaries"))
-
-        self.summary_writter = tf.train.SummaryWriter(
-            self.config.log_path, self.sess.graph, flush_secs=20)
+        if config.logging:
+            self.summary_writter = tf.train.SummaryWriter(
+                self.config.log_path, self.sess.graph, flush_secs=20)
 
 
     def update(self):
