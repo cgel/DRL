@@ -63,7 +63,7 @@ class BaseAgent:
         else:
             # if the agent is testing
             self.observe(screen, reward)
-            self.game_action = self.e_greedy_action(0.01)
+            self.game_action = self.e_greedy_action(self.config.testing_epsilon)
         return self.game_action
 
     # Add the final transition to the RM and reset the internal state for the next
