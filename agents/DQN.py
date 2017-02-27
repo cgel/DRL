@@ -25,7 +25,21 @@ class DQN(BaseAgent):
             self.reward_ph = tf.placeholder(tf.float32, [None], name="reward_ph")
             self.terminal_ph = tf.placeholder(tf.float32, [None], name="terminal_ph")
             self.build_NNs()
-            self.build_sync_and_train()
+            # Note: since the target network is always used together with the train_op
+            # they share the colleciton. But if train_op had variables the
+            # sync_op constructor will break
+            self.train_op = self.train_op("DQNT")
+            self.sync_QT_op = []
+            for W_pair in zip(
+                    tf.get_collection("DQNT_weights"),
+                    tf.get_collection("DQN_weights")):
+                self.sync_QT_op.append(W_pair[0].assign(W_pair[1]))
+            # Define the summary ops
+            self.Q_summary_op = tf.merge_summary(
+                tf.get_collection("DQN_summaries"))
+            self.QT_summary_op = tf.merge_summary(
+                tf.get_collection("DQNT_summaries"))
+
         if config.logging:
                 self.summary_writter = tf.train.SummaryWriter(
                     self.config.log_path, self.sess.graph, flush_secs=20)
@@ -39,24 +53,6 @@ class DQN(BaseAgent):
                 self.stateT_ph, "DQNT")
             cops.build_scalar_summary(tf.reduce_max(self.QT, 1)[0], "DQNT", "main/next_Q_0")
             cops.build_scalar_summary(tf.reduce_max(self.QT), "DQNT", "main/next_Q_max")
-
-    # creates the train and sync operations
-    def build_sync_and_train(self):
-            # since the target network is always used together with the train_op
-            # they share the colleciton. But if the train op somehow as variables
-            # the sync_op constructor will not work
-            self.train_op = self.train_op("DQNT")
-            self.sync_QT_op = []
-            for W_pair in zip(
-                    tf.get_collection("DQNT_weights"),
-                    tf.get_collection("DQN_weights")):
-                self.sync_QT_op.append(W_pair[0].assign(W_pair[1]))
-            # Define the summary ops
-            self.Q_summary_op = tf.merge_summary(
-                tf.get_collection("DQN_summaries"))
-            self.QT_summary_op = tf.merge_summary(
-                tf.get_collection("DQNT_summaries"))
-
 
     def update(self):
         state_batch, action_batch, reward_batch, next_state_batch, terminal_batch, _ = self.RM.sample_transition_batch()
