@@ -64,7 +64,7 @@ def train():
         # log percent
         if episode % config.log_percent_rate == 0 and episode != 0 or is_final_episode:
             percent = float(episode) / config.num_episodes * 100
-            print("%i%% -- device %i%% -- agent %i%% -- epsilon:%.2f" % (percent, config.device, config.agent, agent.epsilon()))
+            print("%i%% -- device %s%% -- agent %s%% -- epsilon:%.2f" % (percent, config.device, config.agent, agent.epsilon()))
         # save
         if episode % config.save_rate == 0 and episode != 0 or is_final_episode:
             print("saving checkpoint at episode " + str(episode))
