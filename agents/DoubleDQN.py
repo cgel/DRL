@@ -1,5 +1,6 @@
 import tensorflow as tf
 from DQN import DQN
+import commonOps as cops
 
 class DoubleDQN(DQN):
 
@@ -8,18 +9,17 @@ class DoubleDQN(DQN):
 
     def build_NNs(self):
         with tf.variable_scope("Q") as scope:
-            self.Q = self.Q_network(self.state_ph, "Normal")
+            self.Q = self.Q_network(self.state_ph, "DQN")
             scope.reuse_variables()
             # the network with online weights used to select the actions of the target network
-            self.DoubleQT = self.Q_network(self.stateT_ph, "")
+            self.DoubleQT = self.Q_network(self.stateT_ph, "DDQNT")
 
         with tf.variable_scope("QT"):
             self.QT = self.Q_network(
-                self.stateT_ph, "Target")
-            tf.scalar_summary(
-                "main/next_Q_max", tf.reduce_max(self.QT), collections=["Target"])
-            tf.scalar_summary(
-                "main/next_Q_0", tf.reduce_max(self.QT, 1)[0], collections=["Target"])
+                self.stateT_ph, "DQNT")
+            cops.build_scalar_summary(tf.reduce_max(self.QT, 1)[0], "DQNT", "main/next_Q_0")
+            cops.build_scalar_summary(tf.reduce_max(self.QT), "DQNT", "main/next_Q_max")
+
 
     def Q_target(self):
         target_action = tf.argmax(self.DoubleQT, axis=1)
