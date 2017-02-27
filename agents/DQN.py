@@ -2,11 +2,19 @@ import tensorflow as tf
 import commonOps as cops
 from baseAgent import BaseAgent
 
+# Implementation of DQN form "Human-level control through deep reinforcement learning"
+
+# Note on the usage of collections.
+#   For summaries: You might want to write the sumaries of the DQN without also
+#                  computing and logging the summaries of the training op and
+#                  target network. Therefore they are keep different collections of summaries
+#   For variables: to create the sync operation we need a colleciton containing
+#                  the variables of the DQN and the target DQN.
+
 class DQN(BaseAgent):
 
     def __init__(self, config, session):
         BaseAgent.__init__(self, config, session)
-        # this initializer is rather awkward but allows a lot of code reutilization
         with tf.device(config.device):
             # Create all variables and the FIFOQueue
             self.state_ph = tf.placeholder(
@@ -22,27 +30,32 @@ class DQN(BaseAgent):
                 self.summary_writter = tf.train.SummaryWriter(
                     self.config.log_path, self.sess.graph, flush_secs=20)
 
+    # creates the Q network and the target network
     def build_NNs(self):
         with tf.variable_scope("Q"):
-            self.Q = self.Q_network(self.state_ph, "Normal")
+            self.Q = self.Q_network(self.state_ph, "DQN")
         with tf.variable_scope("QT"):
             self.QT = self.Q_network(
-                self.stateT_ph, "Target")
-            cops.build_scalar_summary(tf.reduce_max(self.QT, 1)[0], "Target", "main/next_Q_0")
-            cops.build_scalar_summary(tf.reduce_max(self.QT), "Target", "main/next_Q_max")
+                self.stateT_ph, "DQNT")
+            cops.build_scalar_summary(tf.reduce_max(self.QT, 1)[0], "DQNT", "main/next_Q_0")
+            cops.build_scalar_summary(tf.reduce_max(self.QT), "DQNT", "main/next_Q_max")
 
+    # creates the train and sync operations
     def build_sync_and_train(self):
-            self.train_op = self.train_op("Normal")
+            # since the target network is always used together with the train_op
+            # they share the colleciton. But if the train op somehow as variables
+            # the sync_op constructor will not work
+            self.train_op = self.train_op("DQNT")
             self.sync_QT_op = []
             for W_pair in zip(
-                    tf.get_collection("Target_weights"),
-                    tf.get_collection("Normal_weights")):
+                    tf.get_collection("DQNT_weights"),
+                    tf.get_collection("DQN_weights")):
                 self.sync_QT_op.append(W_pair[0].assign(W_pair[1]))
             # Define the summary ops
             self.Q_summary_op = tf.merge_summary(
-                tf.get_collection("Normal_summaries"))
+                tf.get_collection("DQN_summaries"))
             self.QT_summary_op = tf.merge_summary(
-                tf.get_collection("Target_summaries"))
+                tf.get_collection("DQNT_summaries"))
 
 
     def update(self):
@@ -65,7 +78,10 @@ class DQN(BaseAgent):
         if self.step_count % self.config.sync_rate == 0:
             self.sess.run(self.sync_QT_op)
 
-    def Q_network(self, input_state, Collection=None):
+    # Create the Q network operations
+    # If Collection is "DQN", all the variables of this NN are added to the
+    # collection "DQN_weights" and all the summaries to the colleciton "DQN_summaries"
+    def Q_network(self, input_state, Collection):
         conv_stack_shape=[(32,8,4),
                     (64,4,2),
                     (64,3,1)]
