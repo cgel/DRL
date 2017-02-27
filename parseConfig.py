@@ -23,11 +23,11 @@ parser.add_argument("-alpha", type=float, default=0.9)
 parser.add_argument("-update_summary_rate", type=int, default=50000)
 parser.add_argument("-log_online_summary_rate", type=int, default=100)
 parser.add_argument("-log_perf_summary_rate", type=int, default=1000)
-parser.add_argument("-test_run_num", type=int, default=20)
+parser.add_argument("-log_console_rate", type=int, default=1000)
 parser.add_argument("-save_rate", type=int, default=1000)
+parser.add_argument("-test_run_num", type=int, default=20)
 parser.add_argument("-num_episodes", type=int, default=100000)
 config = parser.parse_args()
-config.log_percent_rate = 1000
 config.logging = config.logging not in ["0", "false", "False"]
 config.device = "/gpu:"+config.device
 

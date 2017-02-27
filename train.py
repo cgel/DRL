@@ -17,7 +17,6 @@ sess_config.log_device_placement = False
 sess = tf.Session(config=sess_config)
 
 Agent = getattr(importlib.import_module("agents."+config.agent), config.agent)
-
 agent = Agent(config, sess)
 
 saver = tf.train.Saver(max_to_keep=20)
@@ -29,7 +28,7 @@ else:
 
 print("Starting run: " + str(config.run_name))
 print("Using agent "+config.agent)
-print("On device: "+ str(config.device))
+print("On device: "+ config.device)
 
 def test_run(n):
     agent.testing(True)
@@ -61,15 +60,15 @@ def train():
         is_final_episode = config.num_episodes == episode
         if episode % config.log_online_summary_rate == 0 or is_final_episode:
             online_summary(episode, score, ep_duration, agent.step_count - ep_begin_step_count)
-        # log percent
-        if episode % config.log_percent_rate == 0 and episode != 0 or is_final_episode:
+        # log to console
+        if episode % config.log_console_rate == 0 and episode != 0 or is_final_episode:
             percent = float(episode) / config.num_episodes * 100
-            print("%i%% -- device %s%% -- agent %s%% -- epsilon:%.2f" % (percent, config.device, config.agent, agent.epsilon()))
+            print("%i%% -- %s %s" % (percent, config.run_name, config.device))
         # save
         if episode % config.save_rate == 0 and episode != 0 or is_final_episode:
             print("saving checkpoint at episode " + str(episode))
             saver.save(sess, config.checkpoint_path + "run-" +
-                       run_name + "_episode", episode)
+                       config.run_name + "_episode", episode)
         if episode % config.log_perf_summary_rate == 0 or is_final_episode:
             performance_summary()
 
