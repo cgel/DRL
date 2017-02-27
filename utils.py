@@ -1,5 +1,6 @@
 import re
 import os
+import numpy as np
 import string
 from ale_python_interface import ALEInterface
 import gym
@@ -38,7 +39,7 @@ def create_env(config):
     return env
 
 
-def load_checkpoint():
+def load_checkpoint(sess, saver, config):
     run_num = re.search(r"\d+", config.load_checkpoint)
     if run_num == None:
         raise Exception("Not a run number in checkpoint file")

@@ -22,7 +22,7 @@ agent = Agent(config, sess)
 saver = tf.train.Saver(max_to_keep=20)
 
 if config.load_checkpoint != "":
-    utils.load_checkpoint()
+    utils.load_checkpoint(sess, saver, config)
 else:
     sess.run(tf.initialize_all_variables())
 
