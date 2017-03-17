@@ -25,22 +25,22 @@ def build_scalar_summary(x, Collection, name=None):
         tensor_name = name
     else:
         tensor_name = x.op.name
-    tf.scalar_summary(tensor_name, tf.squeeze(x), collections=[Collection + "_summaries"])
+    tf.summary.scalar(tensor_name, tf.squeeze(x), collections=[Collection + "_summaries"])
 
 def build_activation_summary(x, Collection, name=None):
     if name:
         tensor_name = name
     else:
         tensor_name = x.op.name
-    tf.histogram_summary(tensor_name + '/activations', x, collections=[Collection + "_summaries"])
-    tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(x), collections=[Collection + "_summaries"])
+    tf.summary.histogram(tensor_name + '/activations', x, collections=[Collection + "_summaries"])
+    tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x), collections=[Collection + "_summaries"])
 
 def build_hist_summary(x, Collection, name=None):
     if name:
         tensor_name = name
     else:
         tensor_name = x.op.name
-    tf.histogram_summary(tensor_name + '/activations', x, collections=[Collection + "_summaries"])
+    tf.summary.histogram(tensor_name + '/activations', x, collections=[Collection + "_summaries"])
 
 
 def conv2d(x, W, stride, name):
@@ -53,10 +53,10 @@ def xavier_std(in_size, out_size):
 
 def get_var(name, size, initializer, Collection):
     w = tf.get_variable(name, size, initializer=initializer,
-                        collections=[Collection + "_weights", tf.GraphKeys.VARIABLES])
+                        collections=[Collection + "_weights", tf.GraphKeys.GLOBAL_VARIABLES])
     if tf.get_variable_scope().reuse == False:
         tf.add_to_collection(Collection + "_summaries",
-                             tf.histogram_summary(w.op.name, w))
+                             tf.summary.histogram(w.op.name, w))
     return w
 
 

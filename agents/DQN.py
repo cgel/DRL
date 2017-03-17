@@ -35,13 +35,13 @@ class DQN(BaseAgent):
                     tf.get_collection("DQN_weights")):
                 self.sync_QT_op.append(W_pair[0].assign(W_pair[1]))
             # Define the summary ops
-            self.Q_summary_op = tf.merge_summary(
+            self.Q_summary_op = tf.summary.merge(
                 tf.get_collection("DQN_summaries"))
-            self.QT_summary_op = tf.merge_summary(
+            self.QT_summary_op = tf.summary.merge(
                 tf.get_collection("DQNT_summaries"))
 
         if config.logging:
-                self.summary_writter = tf.train.SummaryWriter(
+                self.summary_writter = tf.summary.FileWriter(
                     self.config.log_path, self.sess.graph, flush_secs=20)
 
     # creates the Q network and the target network

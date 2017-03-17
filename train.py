@@ -4,6 +4,9 @@ import numpy as np
 import parseConfig
 import utils
 import importlib
+import sys
+
+sys.path.append('./agents')
 
 config = parseConfig.config
 
@@ -24,7 +27,7 @@ saver = tf.train.Saver(max_to_keep=20)
 if config.load_checkpoint != "":
     utils.load_checkpoint(sess, saver, config)
 else:
-    sess.run(tf.initialize_all_variables())
+    sess.run(tf.global_variables_initializer())
 
 print("Starting run: " + str(config.run_name))
 print("Using agent "+config.agent)
